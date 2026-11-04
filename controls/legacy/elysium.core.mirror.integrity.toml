@@ -1,0 +1,55 @@
+[[control]]
+id = 'LEG-0127'
+describes = 'R11: a young orphan is spared'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/integrity.py'
+old = '                    if path.name not in live and path.stat().st_mtime < cutoff]'
+new = '                    if path.name not in live]'
+tests = [
+    'tests/unit/test_orphan_files_are_reclaimed.py::test_a_young_orphan_is_left_alone',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0375'
+describes = 'NEW-8: the warehouse check knows every catalogued layer, not just silver and bronze'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/integrity.py'
+old = '            catalog, warehouse_dir, _every_catalogued_table(catalog), report)'
+new = '            catalog, warehouse_dir, silver | bronze, report)'
+tests = [
+    'tests/unit/test_mirror_integrity.py::test_gold_and_its_history_on_disk_are_not_reported_as_unknown',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0377'
+describes = 'BACKLOG-3: an id in the history that silver lacks and was never deleted is reported'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/integrity.py'
+old = '''
+        unaccounted = sorted(named - live - deleted)
+'''
+new = '''
+        unaccounted = sorted(named - live - deleted - named)
+'''
+tests = [
+    'tests/unit/test_the_changelog_names_real_objects.py::TestWhatIsReported::test_an_id_that_is_gone_with_no_deletion_recorded',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1137'
+describes = "the integrity check compares a derived layer's name whole, not by its first letters"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/integrity.py'
+old = '    return namespace in NON_SOURCE_NAMES or namespace.startswith(NON_SOURCE_PREFIXES)'
+new = '    return namespace.startswith("gold") or namespace.startswith(NON_SOURCE_PREFIXES)'
+tests = [
+    'tests/unit/test_a_silo_may_not_be_named_after_a_layer.py::TestTheReservedSetItself::test_a_silo_named_like_a_derived_layer_but_longer_is_still_a_source',
+]
+expect = "fails"

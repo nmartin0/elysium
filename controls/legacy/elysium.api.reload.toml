@@ -1,0 +1,50 @@
+[[control]]
+id = 'LEG-0259'
+describes = 'Live: following a publication rebuilds from the running configuration, not disk'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/reload.py'
+old = '''
+            new = build_generation(scratch, app.state.runtime_paths.data_dir,
+                                   app.state.runtime_paths.log_dir)'''
+new = '''
+            new = build_generation(app.state.runtime_paths.config_dir,
+                                   app.state.runtime_paths.data_dir,
+                                   app.state.runtime_paths.log_dir)'''
+tests = [
+    'tests/integration/test_live_updates.py::test_following_a_publication_never_applies_an_unreloaded_edit',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0260'
+describes = 'Live: a new publication is served without a restart'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/reload.py'
+old = '''
+        app.state.generation = new
+        record_generation(app.state.config_history, new)
+        current.mediator'''
+new = '''
+        record_generation(app.state.config_history, new)
+        current.mediator'''
+tests = [
+    'tests/integration/test_live_updates.py::test_a_new_publication_is_served_without_a_restart',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0545'
+describes = "DECLARED: a reload sets config.yaml's schedules"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/reload.py'
+old = '''
+                arm_declared(TimerStore(app.state.runtime_paths.data_dir),
+                             new.config.declared_triggers)'''
+new = '                pass'
+tests = [
+    'tests/integration/test_combined_triggers.py::test_a_reload_sets_the_check_of_a_scheduled_config_yaml_trigger',
+]
+expect = "fails"

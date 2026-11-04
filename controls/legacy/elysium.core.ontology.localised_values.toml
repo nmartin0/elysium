@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0254'
+describes = 'DEP-1: grouping is strict, so 1.5 under pt_BR is refused, not fifteen'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/localised_values.py'
+old = '        return parse_decimal(stripped, locale=locale, strict=True)'
+new = '        return parse_decimal(stripped, locale=locale, strict=False)'
+tests = [
+    'tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestTheRules::test_what_is_refused_rather_than_guessed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0255'
+describes = 'DEP-1: a two-digit year is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/localised_values.py'
+old = '    if len(by_letter["Y"]) != 4:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestTheRules::test_what_is_refused_rather_than_guessed',
+]
+expect = "fails"

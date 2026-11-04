@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0706'
+describes = 'TIMING: reuse is measured only over calls that reported it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/compare_models.py'
+old = '            if record.input_tokens and record.cached_input_tokens is not None:'
+new = '            if record.input_tokens:'
+tests = [
+    'tests/unit/test_compare_models.py::test_each_model_is_run_and_the_faster_one_shows_it',
+]
+expect = "fails"

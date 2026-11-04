@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0414'
+describes = 'R31: a dismissed suggestion stays dismissed when the next scan finds it again'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/rule_suggestions.py'
+old = '                if row["state"] == DISMISSED:'
+new = '                if False:'
+tests = [
+    'tests/unit/test_rule_suggestions.py::TestTheQueue::test_a_dismissal_survives_the_next_scan',
+]
+expect = "fails"

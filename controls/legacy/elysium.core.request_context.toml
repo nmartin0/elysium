@@ -1,0 +1,14 @@
+[[control]]
+id = 'LEG-0703'
+describes = "TIMING: a part's calls are recorded in the whole"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/request_context.py'
+old = '''
+        root = self._parent or self
+        return TokenUsage(_parent=root, _part=part)'''
+new = '        return TokenUsage(_part=part)'
+tests = [
+    'tests/unit/test_where_a_questions_time_goes.py::TestTheTally::test_a_part_records_into_the_whole',
+]
+expect = "fails"

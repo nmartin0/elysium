@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0250'
+describes = 'ZOO-24: a declared casefold folds the identity key'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/identity.py'
+old = '        values.append(key.casefold() if field_name in rule.casefold else key)'
+new = '        values.append(key)'
+tests = [
+    'tests/unit/test_identity_resolution.py::TestADeclaredCasefold::test_declared_the_two_spellings_are_one_entity',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0336'
+describes = 'R28: identity matching keys a declared value type canonically'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/identity.py'
+old = '        key = canonical_key(value, (type_def.get("fields") or {}).get(field_name) or {})'
+new = '        key = str(value)'
+tests = [
+    'tests/unit/test_value_types.py::test_identity_matches_two_spellings_of_one_address',
+]
+expect = "fails"

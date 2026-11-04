@@ -1,0 +1,51 @@
+[[control]]
+id = 'LEG-0830'
+describes = 'SIM PANEL: a run building or tidying up reads as busy'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/panel/server.py'
+old = '        under_way = run_under_way(self.directory) or self._still_launching()'
+new = '        under_way = self._still_launching()'
+tests = [
+    'sim/tests/test_panel.py::test_a_run_under_way_is_busy_even_before_it_answers',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0831'
+describes = 'SIM PANEL: changing the world needs the operate permission'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/panel/server.py'
+old = '            if not elysium_addon.holds(who, "operate"):'
+new = '            if False:'
+tests = [
+    'sim/tests/test_panel.py::test_changing_the_world_needs_the_operate_permission',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0835'
+describes = 'SIM PANEL: operators are told a world crashed, even while Elysium was down'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/panel/server.py'
+old = '            return json.loads(self.path.read_text())'
+new = '            return None'
+tests = [
+    'sim/tests/test_panel.py::test_a_crash_is_told_even_when_it_happened_while_elysium_was_down',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0836'
+describes = 'SIM PANEL: a stop someone asked for is not told as a failure'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/panel/server.py'
+old = ' and not last.get("ran") and not asked:'
+new = ' and not last.get("ran"):'
+tests = [
+    'sim/tests/test_panel.py::test_a_stop_someone_asked_for_tells_nobody_even_while_it_was_building',
+]
+expect = "fails"

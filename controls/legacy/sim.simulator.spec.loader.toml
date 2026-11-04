@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0034'
+describes = 'a withheld table naming nothing is caught at load'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'sim/simulator/spec/loader.py'
+old = '        if missing:'
+new = '        if False:'
+tests = [
+    'sim/tests/test_pack_loader.py::test_a_withheld_table_must_be_one_the_silo_declares',
+]
+expect = "fails"

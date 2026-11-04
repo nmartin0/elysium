@@ -1,0 +1,87 @@
+[[control]]
+id = 'LEG-1120'
+describes = 'v2 paging: a page token is bound to the caller it was issued to'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/paging.py'
+old = '''
+    message = "\0".join([user_id, query, payload]).encode()
+'''
+new = '''
+    message = "\0".join([query, payload]).encode()
+'''
+tests = [
+    'tests/unit/test_v2_paging.py::test_another_caller_cannot_use_it',
+    'tests/integration/test_api_v2.py::TestPageTokens::test_another_user_cannot_use_my_token',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1121'
+describes = 'v2 paging: a page token is bound to the query it pages through'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/paging.py'
+old = '''
+    message = "\0".join([user_id, query, payload]).encode()
+'''
+new = '''
+    message = "\0".join([user_id, payload]).encode()
+'''
+tests = [
+    'tests/unit/test_v2_paging.py::test_another_query_cannot_use_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1123'
+describes = 'v2 paging: a page token expires'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/paging.py'
+old = '''
+    if offset < 0 or (time.time() if now is None else now) > expires:
+'''
+new = '''
+    if offset < 0:
+'''
+tests = [
+    'tests/unit/test_v2_paging.py::test_a_token_expires',
+    'tests/integration/test_api_v2.py::TestPageTokens::test_an_expired_token_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1124'
+describes = 'v2 paging: a page size over the maximum is clamped'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/paging.py'
+old = '''
+    return max(1, min(requested, MAX_PAGE_SIZE))
+'''
+new = '''
+    return max(1, requested)
+'''
+tests = [
+    'tests/unit/test_v2_paging.py::test_the_default_and_the_maximum_are_named_and_applied',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1155'
+describes = 'v2 paging: a page token is compared as bytes, so a non-ASCII one is invalid not a 500'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/paging.py'
+old = '''
+    if not hmac.compare_digest(presented, expected):
+'''
+new = '''
+    if not hmac.compare_digest(signature, _signature(key, user_id, query, payload)):
+'''
+tests = [
+    'tests/unit/test_v2_paging.py::test_a_token_that_is_not_ascii_is_invalid_not_a_fault[abc.\xe9]',
+    'tests/integration/test_api_v2.py::TestPageTokens::test_a_token_that_is_not_ascii_is_the_same_refusal_not_a_fault',
+]
+expect = "fails"

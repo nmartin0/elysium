@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0470'
+describes = 'DEV_UI 13.5: proposed grants are compiled as the mediators compile them'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/role_impact.py'
+old = '    proposed = access_roles(dataclasses.replace(config, roles=declared))'
+new = '    proposed = declared'
+tests = [
+    'tests/integration/test_role_change_impact.py::TestItAsksThePermissionCode::test_a_label_grant_shows_as_the_fields_it_opens',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0481'
+describes = 'DEV_UI 13.7 labels: widening is asked of the permission code, gains included'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/role_impact.py'
+old = '_GAINS = ("types_gained", "fields_gained", "actions_gained", "other_gained")'
+new = '_GAINS = ("types_gained", "actions_gained", "other_gained")'
+tests = [
+    'tests/integration/test_access_labels.py::TestWhenLabelsDecideAccess::test_adding_a_label_can_open_a_field_too',
+]
+expect = "fails"

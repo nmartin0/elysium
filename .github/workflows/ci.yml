@@ -106,7 +106,7 @@ jobs:
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: The controls fire
-        run: python -m elysium.scripts.check_controls
+        run: python tools/check_controls.py
 
   frontend:
     runs-on: ubuntu-24.04

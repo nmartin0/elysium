@@ -1,0 +1,90 @@
+[[control]]
+id = 'LEG-1156'
+describes = 'trace: a refusal by the row check is not shown to the caller'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/access/audit.py'
+old = 'entry.get("mac_allowed") is False or '
+new = ''
+tests = [
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_refusal_by_the_row_check_is_not_shown',
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestEveryWayOfTouchingAHiddenRowLeavesNoNameInTheTrace::test_a_scan_of_a_type',
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestThroughTheRoute::test_a_v1_search_and_a_v1_get_of_a_hidden_row',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1157'
+describes = 'trace: a refusal by the grants alone is not shown either'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/access/audit.py'
+old = ' or not entry.get("rbac_allowed")'
+new = ''
+tests = [
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_refusal_by_the_grants_alone_is_not_shown_either',
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestARefusalOnALinkLeavesNoSignInTheTrace::test_the_trace_of_a_masked_link_read_has_no_refusal_and_no_flag',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1158'
+describes = 'trace: a bulk-read record carries no count of what was denied or considered'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/access/audit.py'
+old = 'if key not in ("denied", "denied_object_ids", "considered")}'
+new = 'if key not in ("x",)}'
+tests = [
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_bulk_record_counts_nothing_hidden',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1159'
+describes = 'trace: no returned record carries mac_allowed or rbac_allowed'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/access/audit.py'
+old = 'if key not in ("mac_allowed", "rbac_allowed")}'
+new = 'if key not in ("x",)}'
+tests = [
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_no_record_carries_the_flags',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1160'
+describes = 'trace: a bulk read that granted nothing is not returned'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/access/audit.py'
+old = '''
+            if int(entry.get("considered") or 0) - int(entry.get("denied") or 0) <= 0:
+'''
+new = '''
+            if False:
+'''
+tests = [
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_bulk_read_that_granted_nothing_is_not_returned',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1161'
+describes = 'trace: a record of any other stage is not returned to the caller'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/access/audit.py'
+old = '''
+                    if key not in ("denied", "denied_object_ids", "considered")}
+        return None
+'''
+new = '''
+                    if key not in ("denied", "denied_object_ids", "considered")}
+        return entry
+'''
+tests = [
+    'tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_record_of_any_other_stage_is_not_returned',
+]
+expect = "fails"

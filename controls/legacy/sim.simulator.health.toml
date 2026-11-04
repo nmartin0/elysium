@@ -1,0 +1,50 @@
+[[control]]
+id = 'LEG-0052'
+describes = 'a DELETE that failed for another reason is not a refusal'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/health.py'
+old = '            if not _is_permission_error(error):'
+new = '            if False:'
+tests = [
+    'sim/tests/test_cli.py::test_verify_does_not_call_a_broken_delete_a_refusal',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0055'
+describes = 'verify notices a table with no primary key'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/health.py'
+old = '''
+                   if t.name not in keyed]
+        if missing:
+            raise RuntimeError(f"no primary key on {sorted(missing)}")'''
+new = '''
+                   if t.name not in keyed]
+        if missing:
+            pass'''
+tests = [
+    'sim/tests/test_cli.py::test_verify_notices_a_table_with_no_primary_key',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0056'
+describes = 'verify notices a SQLite table with no primary key'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/health.py'
+old = '''
+                   if not any(c.primary_key for c in t.columns)]
+        if missing:
+            raise RuntimeError(f"no primary key on {sorted(missing)}")'''
+new = '''
+                   if not any(c.primary_key for c in t.columns)]
+        if missing:
+            pass'''
+tests = [
+    'sim/tests/test_sqlite_relational.py::test_simulator_verify_notices_a_table_with_no_key',
+]
+expect = "fails"

@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0564'
+describes = 'CANVAS: a position for a type the caller cannot see is not kept'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/core/canvas_layout.py'
+old = '''
+        if type_name in visible:
+            positions[type_name]'''
+new = '''
+        if True:
+            positions[type_name]'''
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_a_type_they_cannot_see_is_dropped_and_the_answer_says_what_was_kept',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0878'
+describes = 'SHARED LAYOUT: saving merges over what is saved'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/canvas_layout.py'
+old = 'merged = {**self.get_shared(), **positions}'
+new = 'merged = dict(positions)'
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_a_manager_who_sees_fewer_types_does_not_erase_the_others',
+]
+expect = "fails"

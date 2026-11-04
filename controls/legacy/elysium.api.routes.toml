@@ -1,0 +1,3080 @@
+[[control]]
+id = 'LEG-0060'
+describes = 'an approval re-reads the generation inside the lock'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        config = latest_generation(request).config
+        every, active = _holders(request)'''
+new = '''
+        config = _generation(request).config
+        every, active = _holders(request)'''
+tests = [
+    'tests/integration/test_role_changes.py::TestApprovalsDoNotLoseEachOther::test_a_request_pinned_before_another_approval_keeps_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0066'
+describes = "the lineage routes can actually find the deployment's catalog"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        (adapter.catalog for adapter in mediator.adapters.values()
+         if getattr(adapter, "catalog", None) is not None),'''
+new = '''
+        (getattr(adapter, "_catalog", None) for adapter in mediator.adapters.values()
+         if getattr(adapter, "_catalog", None) is not None),'''
+tests = [
+    'tests/integration/test_the_provenance_route.py::TestWhatItAnswers::test_IT_ACTUALLY_ANSWERS_SOMETHING',
+    'tests/integration/test_the_conflicts_route.py::TestTheLosingValueComesBack::test_it_says_what_the_other_source_held_and_where_each_came_from',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0067'
+describes = "a conflict about another compartment's object is not served"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not _may_read_object(mediator, current_user, object_type, object_id):
+        return []
+
+    catalog = _deployment_catalog(mediator)'''
+new = '''
+    if not True:
+        return []
+
+    catalog = _deployment_catalog(mediator)'''
+tests = [
+    'tests/integration/test_the_conflicts_route.py::TestMACSTILLAPPLIES::test_an_administrator_in_another_compartment_gets_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0068'
+describes = "a conflict's values are withheld when the field is not readable"
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        may_read = field_name is None or field_name in readable'
+new = '        may_read = True'
+tests = [
+    'tests/integration/test_the_conflicts_route.py::TestAFieldTheyMayNotRead::test_and_neither_value_is_anywhere_in_the_body',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0069'
+describes = "the reviewer's readable fields are actually looked up"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    type_def = (schema or {}).get(object_type) or {}'
+new = '    type_def = (schema or {}).get("object_types", {}).get(object_type) or {}'
+tests = [
+    'tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestTheReviewerSeesVerdictsNotValues::test_a_field_the_reviewer_CAN_read_carries_its_values',
+    'tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestTheReviewerSeesVerdictsNotValues::test_and_NOTHING_is_withheld_when_everything_is_readable',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0082'
+describes = 'compare: the overlap is an intersection'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        "both": len(left_set & right_set),'
+new = '        "both": len(left_set | right_set),'
+tests = [
+    'tests/integration/test_compare_sets.py::TestComparing::test_it_counts_the_three_regions',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0083'
+describes = 'compare: a saved view runs with its own conditions'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        conditions = parse_filters(checked.runnable) if checked.runnable else []'
+new = '        conditions = []'
+tests = [
+    'tests/integration/test_compare_sets.py::TestComparing::test_a_saved_view_is_run_as_its_owner_saved_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0084'
+describes = 'compare: a saved view is compared as saved'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if reference.saved_view and narrowed:'
+new = '    if False:'
+tests = [
+    'tests/integration/test_compare_sets.py::TestWhatCannotBeCompared::test_a_saved_view_with_more_filters_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0085'
+describes = "compare: a saved view is looked up among the caller's own"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if view is None or view.object_type != object_type:
+            raise HTTPException(status_code=404, detail="No such saved view")'''
+new = '''
+        if view is None:
+            from elysium.core.saved_views import SavedViewStore as _S
+            view = _S(request.app.state.runtime_paths.data_dir / "saved_views.db").get(reference.saved_view)'''
+tests = [
+    'tests/integration/test_compare_sets.py::TestWhatCannotBeCompared::test_somebody_elses_saved_view_is_no_view',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0086'
+describes = 'combine: the right-hand region excludes the left'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        "right_only": lambda member: member not in left_set,'
+new = '        "right_only": lambda member: member in right_set,'
+tests = [
+    'tests/integration/test_compare_sets.py::TestKeepingAPart::test_the_right_hand_part_is_the_right_hand_part',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0087'
+describes = 'combine: both is in both, not merely in the right'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        "both": lambda member: member in left_set and member in right_set,'
+new = '        "both": lambda member: member in right_set,'
+tests = [
+    'tests/integration/test_compare_sets.py::TestKeepingAPart::test_both_means_both_when_each_side_has_its_own',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0088'
+describes = 'combine: an empty region is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        raise HTTPException(status_code=400, detail="That part is empty, so there is nothing to keep.")'
+new = '        pass'
+tests = [
+    'tests/integration/test_compare_sets.py::TestKeepingAPart::test_an_empty_part_is_refused_not_saved',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0120'
+describes = 'R65: the notifications read checks the sync is running'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _check_the_sync_is_running(request, current_user, store)
+'''
+new = ''
+tests = [
+    'tests/integration/test_the_sync_is_watched.py::test_an_administrator_is_told_when_the_sync_stopped',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0122'
+describes = 'R65: only somebody who can fix it is told'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not authorize(user, config.roles, RECIPIENT_GRANT):
+        return'''
+new = '''
+    if False:
+        return'''
+tests = [
+    'tests/integration/test_the_sync_is_watched.py::test_somebody_who_cannot_fix_it_is_not_told',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0163'
+describes = "R13 removal: the removal records the lake's key columns before the names go"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        notice = _record_erasure_keys_before(request)
+        try:
+            # A field'''
+new = '''
+        notice = None
+        try:
+            # A field'''
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestRemovingATypeRecordsItsTablesFirst::test_a_removal_through_the_ui_leaves_no_hole_in_old_tables',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0164'
+describes = 'R13 removal: an unreadable lake never fails the removal'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    except Exception as e:  # noqa: BLE001 - never fail the edit; say so'
+new = '    except ZeroDivisionError as e:'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestRemovingATypeRecordsItsTablesFirst::test_a_removal_with_an_unreadable_lake_goes_ahead_and_says_what_it_could_not_record',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0165'
+describes = 'R13 removal: the reply says what could not be recorded'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        return ("The lake could not be read, so the tables'
+new = '        return (None and "The lake could not be read, so the tables'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestRemovingATypeRecordsItsTablesFirst::test_a_removal_with_an_unreadable_lake_goes_ahead_and_says_what_it_could_not_record',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0199'
+describes = 'R2 state: the mirror panel never says a rebuild is owed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '            "rebuild_owed": f"{target.silo_name}.{target.table_name}" in (owed or ()),'
+new = '            "rebuild_owed": False,'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestTheStateOfTheObject::test_after_the_change_the_table_is_owed_and_the_object_is_still_live',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0201'
+describes = 'R2 state: the sync lock is never tried by the mirror route'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        sync_running = _a_sync_holds_the_lock(request)'
+new = '        sync_running = False'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_recorded_rebuild_is_rebuilding_while_a_sync_holds_the_lock',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0203'
+describes = 'R4 hold: an approval goes ahead while its type is rebuilding'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if held is not None:
+            raise HTTPException(status_code=409, detail=held)'''
+new = '''
+        if False:
+            raise HTTPException(status_code=409, detail=held)'''
+tests = [
+    'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_the_approval_is_held_with_the_reason_and_nothing_is_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0204'
+describes = 'R4 hold: a rejection is held like an approval'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if approved:
+        # HELD BEFORE ANY DECISION IS RECORDED (R4)'''
+new = '''
+    if True:
+        # HELD BEFORE ANY DECISION IS RECORDED (R4)'''
+tests = [
+    'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_a_rejection_is_not_a_write_and_is_not_held',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0205'
+describes = 'R4 hold: a state that cannot be worked out is guessed live'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        by_type = dict.fromkeys(touched, UNAVAILABLE)'
+new = '        by_type = {}'
+tests = [
+    'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhenItCannotBeTold::test_a_state_that_cannot_be_worked_out_at_all_holds_the_write',
+    'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhenItCannotBeTold::test_a_mirror_that_cannot_be_read_holds_the_write_and_says_it_cannot_tell',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0209'
+describes = 'R3 count: the preview says nothing of the values that will not convert'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '                        conversions=conversions), shown, hidden)'
+new = '                        conversions=None), shown, hidden)'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_the_count_of_values_that_will_not_convert_is_in_the_preview_before_anything_is_applied',
+    'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_values_that_will_not_convert_are_counted_and_nothing_is_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0215'
+describes = 'R3 count: a mirror that cannot be opened counts as zero'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        return [ConversionCount(name, column, False, why_not="the mirror could not be read just now")]'
+new = '        return []'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_a_mirror_that_cannot_be_opened_is_not_counted_and_the_preview_still_answers',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0220'
+describes = "R13 other paths: approving a waiting change records the lake's tables first"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        notice = _record_erasure_keys_before(request)       # the proposal may drop a type'
+new = '        notice = None'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestRemovingATypeRecordsItsTablesFirst::test_approving_a_waiting_change_records_the_tables_first_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0221'
+describes = 'R13 sync lock: a record is not written while a sync is running'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+            if not free:
+                return ("A sync was running'''
+new = '''
+            if False:
+                return ("A sync was running'''
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestRemovingATypeRecordsItsTablesFirst::test_a_removal_while_a_sync_runs_does_not_touch_the_lake_and_says_so',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0228'
+describes = 'R67b: only fields the caller was shown are described'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        [name for name, value in fields.items() if value is not None])'
+new = '        list(fields))'
+tests = [
+    'tests/integration/test_the_object_page_says_what_is_overlaid.py::test_an_object_outside_the_compartment_says_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0243'
+describes = 'R16: a data contract requires manage:users'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_users(request, current_user)
+    config = _generation(request).config
+    if object_type not in'''
+new = '''
+    config = _generation(request).config
+    if object_type not in'''
+tests = [
+    'tests/integration/test_api.py::test_a_data_contract_requires_manage_users',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0246'
+describes = "R38: per-field sources are withheld outside the caller's compartment"
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if not _may_read_object(mediator, current_user, object_type, object_id):
+            provenance["field_sources"] = None'''
+new = '''
+        if False:
+            provenance["field_sources"] = None'''
+tests = [
+    'tests/integration/test_the_provenance_route.py::TestWhichSourceSuppliedEachValue::test_the_field_from_the_second_silo_says_so',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0247'
+describes = 'R38: a field the caller cannot read is not named'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '                if name in readable}'
+new = '                if True}'
+tests = [
+    'tests/integration/test_the_provenance_route.py::TestWhichSourceSuppliedEachValue::test_a_field_the_caller_cannot_read_is_not_named',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0258'
+describes = 'Live: only a write that was applied is announced'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if outcome is not None and outcome.get("status") == "written":'
+new = '    if True:'
+tests = [
+    'tests/integration/test_live_updates.py::test_a_rejected_write_tells_nobody',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0261'
+describes = "Help: the assistant is told the caller's visible schema, not the whole ontology"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    context = build_context(screens, visible, grants, screen)'
+new = '    context = build_context(screens, generation.mediator.schema, grants, screen)'
+tests = [
+    'tests/integration/test_help_assistant.py::test_it_is_told_only_what_the_caller_may_know',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0262'
+describes = 'Help: a screen the caller cannot open is not passed on'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    screen = body.screen if body.screen in {app["name"] for app in screens} else None'
+new = '    screen = body.screen'
+tests = [
+    'tests/integration/test_help_assistant.py::test_a_screen_the_caller_cannot_open_is_not_named_as_theirs',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0264'
+describes = 'Help: an unreachable model never shows its address'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '            detail="The help assistant cannot reach its model right now. Try again later, "'
+new = '            detail=str(e) + "The help assistant cannot reach its model right now. Try again later, "'
+tests = [
+    'tests/integration/test_help_assistant.py::test_an_unreachable_model_is_a_503_that_says_so',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0318'
+describes = 'LB-3: every early stop reaches synthesis as possibly incomplete'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '            result.possibly_incomplete,'
+new = '            result.hit_max_hops or result.ran_out_of_time or result.hit_token_budget,'
+tests = [
+    'tests/integration/test_api.py::test_every_early_stop_reaches_synthesis_as_possibly_incomplete',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0357'
+describes = 'NEW-3: the approve route re-reads the proposer'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+                proposer_now=_proposer_as_they_are_now(request, pending.user_id),
+'''
+new = ''
+tests = [
+    'tests/unit/test_proposer_is_reread_at_confirm.py::test_every_confirm_under_api_says_which_proposer_it_found',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0358'
+describes = 'NEW-3: a disabled account reads as gone'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not directory.user_exists(user_id) or directory.is_user_disabled(user_id):
+        return None'''
+new = '''
+    if not directory.user_exists(user_id):
+        return None'''
+tests = [
+    'tests/unit/test_proposer_is_reread_at_confirm.py::TestTheRouteLooksThemUp::test_a_disabled_account_is_none',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0361'
+describes = 'PA001-G12: the detail route answers at the declared scale'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+            "fields": exact_decimals(fields, _declared_fields(mediator, object_type)),
+'''
+new = '''
+            "fields": fields,
+'''
+tests = [
+    'tests/unit/test_decimals_leave_the_api_exactly.py::test_the_detail_route_answers_at_the_declared_scale',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0373'
+describes = "PA001-F5: the mirror-status route opens the sync with the deployment's storage"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    sync = IcebergMirrorSync(mirror_dir, {}, storage=storage)
+'''
+new = '''
+    sync = IcebergMirrorSync(mirror_dir, {})
+'''
+tests = [
+    'tests/unit/test_object_storage_can_be_served.py::TestEverySyncObjectIsGivenTheStorage::test_no_construction_leaves_the_storage_out',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0384'
+describes = "WIRED-3: a match at or above the type's auto_propose_above is flagged for pre-selection"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        if float(proposal.score) >= settings.auto_propose_above:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_high_confidence_matches_are_preselected.py::test_at_or_above_the_declared_threshold_is_high_confidence',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0385'
+describes = "WIRED-2: an approval finishes the asker's paused question"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = 'functools.partial(_finish_paused_query, request.app, _generation(request),'
+new = 'functools.partial(lambda *_: None, request.app, _generation(request),'
+tests = [
+    'tests/integration/test_a_question_is_answered_after_approval.py::test_after_approval_the_asker_is_sent_the_answer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0386'
+describes = 'WIRED-2: a question that pauses for a write is kept'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+            _paused_queries(request.app).save(
+                write_id, current_user.user_id, question,'''
+new = '''
+            (lambda *a, **k: None)(
+                write_id, current_user.user_id, question,'''
+tests = [
+    'tests/integration/test_a_question_is_answered_after_approval.py::test_after_approval_the_asker_is_sent_the_answer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0387'
+describes = 'WIRED-2: a gone or disabled asker gets nothing resumed'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    asker = asker_now()
+    if asker is None:
+        return
+'''
+new = '''
+    asker = asker_now() or directory.get_user_record(paused.user_id)
+'''
+tests = [
+    'tests/unit/test_a_paused_question_runs_as_the_asker_now.py::test_a_disabled_asker_gets_nothing_resumed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0407'
+describes = "BULK-1: select-all-matching refuses past the deployment's limit"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    limit = _generation(request).config.bulk_action_limit'
+new = '    limit = MAX_BULK_OBJECTS'
+tests = [
+    'tests/integration/test_api.py::test_matching_ids_refuses_rather_than_truncating',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0408'
+describes = "R61: a proposal's source-qualified ids are read as the entities they name"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    left = entity_id_of(type_def, proposal.left_id)'
+new = '    left = proposal.left_id'
+tests = [
+    'tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAProposalAsTheMatcherWritesIt::test_the_values_of_a_readable_pair_are_shown',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0409'
+describes = 'R61: a merge proposal with a side MAC hides is not listed'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    visible = any(readable) if proposal.decision == APPROVED else all(readable)'
+new = '    visible = True'
+tests = [
+    'tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAProposalAsTheMatcherWritesIt::test_a_pair_with_a_side_this_reviewer_cannot_see_is_not_shown',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0410'
+describes = 'R61: a merge proposal with a side MAC hides cannot be decided'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if _proposal_sides(request, current_user, proposal) is None:'
+new = '    if False:'
+tests = [
+    'tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAProposalAsTheMatcherWritesIt::test_nor_may_they_decide_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0415'
+describes = 'R31: a suggestion on a field the caller cannot read is neither shown nor decidable'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '            if authorize(user, roles, f"read:{item.object_type}.{item.field}")]'
+new = '            if True]'
+tests = [
+    'tests/integration/test_rule_suggestions_api.py::test_a_field_the_caller_cannot_read_is_not_shown_nor_decidable',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0445'
+describes = 'R58: a chained approval needs the group it joins'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        if shown and (sorted(body.confirm_group or []) != shown["group"]):'
+new = '        if False:'
+tests = [
+    'tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAChainIsApprovedAsAGroup::test_approving_without_the_group_is_refused_with_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0447'
+describes = 'R58: an unreadable member of the group is counted, not named'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '             or _may_read_object(generation.mediator, user, proposal.object_type,'
+new = '             or True or _may_read_object(generation.mediator, user, proposal.object_type,'
+tests = [
+    'tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAChainIsApprovedAsAGroup::test_the_card_says_what_else_it_would_join',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0452'
+describes = 'R57: below the declared threshold only an uncalibrated type ticks nothing'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        elif calibration.status == CALIBRATED and proposal.proposal_id in calibration.selected:'
+new = '        elif True:'
+tests = [
+    'tests/unit/test_match_calibration.py::TestTheListing::test_one_rejection_short_ticks_nothing_and_says_uncalibrated',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0469'
+describes = 'DEV_UI 13.3: who-can-see is for manage:roles only'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_roles(request, current_user)
+    generation = _generation(request)
+    every, _active = _holders(request)
+    schema'''
+new = '''
+    generation = _generation(request)
+    every, _active = _holders(request)
+    schema'''
+tests = [
+    'tests/integration/test_who_can_see.py::TestWhoMayAsk::test_an_ordinary_user_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0471'
+describes = 'DEV_UI 13.5: a preview refuses what proposing would refuse'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if problem is not None:
+        raise HTTPException(status_code=400, detail=problem)
+    from elysium.core.role_impact import role_change_impact'''
+new = '    from elysium.core.role_impact import role_change_impact'
+tests = [
+    'tests/integration/test_role_change_impact.py::TestItChangesNothingAndRefusesWhatProposingWould::test_a_change_proposing_would_refuse_is_refused_with_its_reason',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0472'
+describes = 'DEV_UI 13.5: the approver sees what a waiting change would do'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '                         "impact": _impact_or_none(request, change.role_name, change.after, every)}'
+new = '                         "impact": None}'
+tests = [
+    'tests/integration/test_role_change_impact.py::TestTheApproverSeesIt::test_a_pending_change_carries_its_impact',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0473'
+describes = 'DEV_UI 14.5: a type the caller may only discover gets no count'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if not authorize(current_user, generation.config.roles, f"read:{object_type}"):
+            continue
+        outcome = SearchOutcome()'''
+new = '        outcome = SearchOutcome()'
+tests = [
+    'tests/integration/test_type_counts.py::TestOnlyWhatTheyMayRead::test_a_type_they_may_only_discover_gets_no_count',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0474'
+describes = "DEV_UI 14.5: one type's failed count is one type, not the answer"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        except Exception:  # noqa: BLE001 - see the docstring: one type, not the answer
+            continue'''
+new = '''
+        except ZeroDivisionError:
+            continue'''
+tests = [
+    'tests/integration/test_type_counts.py::TestOneFailureIsOneType::test_a_type_whose_count_fails_is_left_out',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0480'
+describes = 'DEV_UI 13.7 labels: a widening waits rather than applying'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if not impact["widens"]:
+            result = _write_config_file('''
+new = '''
+        if True:
+            result = _write_config_file('''
+tests = [
+    'tests/integration/test_access_labels.py::TestWhenLabelsDecideAccess::test_removing_a_label_opens_the_field_and_waits',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0482'
+describes = 'DEV_UI 13.7 proposals: the proposer cannot approve their own'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if proposal.proposed_by == current_user.user_id:
+            raise HTTPException(status_code=409'''
+new = '''
+        if False:
+            raise HTTPException(status_code=409'''
+tests = [
+    'tests/integration/test_access_labels.py::TestTheSecondPerson::test_the_proposer_cannot_approve_their_own',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0483'
+describes = 'DEV_UI 13.7 proposals: approving is for role managers'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_roles(request, current_user)
+    store = _proposals(request)
+    with _config_edit_lock:'''
+new = '''
+    store = _proposals(request)
+    with _config_edit_lock:'''
+tests = [
+    'tests/integration/test_access_labels.py::TestTheSecondPerson::test_a_deployment_manager_cannot_approve',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0484'
+describes = 'DEV_UI 13.7 proposals: a file changed since is stale, not merged'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if any(digest(current[name]) != proposal.base.get(name) for name in proposal.files):
+            reason = ('''
+new = '''
+        if False:
+            reason = ('''
+tests = [
+    'tests/integration/test_access_labels.py::TestTheSecondPerson::test_a_file_changed_since_is_stale_not_merged',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0485'
+describes = "DEV_UI 13.7 proposals: rejecting someone else's needs manage:roles"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not own:
+        _require_manage_roles(request, current_user)
+'''
+new = ''
+tests = [
+    'tests/integration/test_access_labels.py::TestTheSecondPerson::test_only_role_managers_reject_someone_elses',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0486'
+describes = 'DEV_UI 13.7 labels: a widening needs a reason'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not reason:
+        raise HTTPException(status_code=400, detail=(
+            "This lets people read more'''
+new = '''
+    if False:
+        raise HTTPException(status_code=400, detail=(
+            "This lets people read more'''
+tests = [
+    'tests/integration/test_access_labels.py::TestWhenLabelsDecideAccess::test_a_widening_without_a_reason_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0488'
+describes = 'DEV_UI 13.7 restore: a data type does not go back'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if moved:
+            raise HTTPException(status_code=400, detail=('''
+new = '''
+        if False:
+            raise HTTPException(status_code=400, detail=('''
+tests = [
+    'tests/integration/test_putting_a_version_back.py::TestWhatItRefuses::test_a_data_type_does_not_go_back',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0489'
+describes = 'DEV_UI 13.7 restore: a widening restore waits'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if not impact["widens"]:
+            notice = _record_erasure_keys_before(request)       # the older generation may lack a type'''
+new = '''
+        if True:
+            notice = _record_erasure_keys_before(request)       # the older generation may lack a type'''
+tests = [
+    'tests/integration/test_putting_a_version_back.py::TestPuttingItBack::test_a_widening_restore_waits_with_its_reason_and_the_approver_applies_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0490'
+describes = 'DEV_UI 13.7 restore: a file changed since the preview is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        if _files_digest(now) != body.digest:'
+new = '        if False:'
+tests = [
+    'tests/integration/test_putting_a_version_back.py::TestPuttingItBack::test_a_file_changed_since_the_preview_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0491'
+describes = 'DEV_UI 13.7 restore: a file that comes or goes is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if set(then) != set(now):'
+new = '    if False:'
+tests = [
+    'tests/integration/test_putting_a_version_back.py::TestWhatItRefuses::test_a_file_that_comes_or_goes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0492'
+describes = 'DEV_UI 13.7 restore: nothing to put back says so'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not changed:
+        raise HTTPException(status_code=400, detail=('''
+new = '''
+    if False:
+        raise HTTPException(status_code=400, detail=('''
+tests = [
+    'tests/integration/test_putting_a_version_back.py::TestWhatItRefuses::test_nothing_to_put_back',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0536'
+describes = 'COMBINED: deleting a trigger stops its timers'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    disarm(_timer_store(request), TriggerStateStore(request.app.state.runtime_paths.data_dir),
+           trigger_id)
+    return {"deleted": True}'''
+new = '    return {"deleted": True}'
+tests = [
+    'tests/integration/test_combined_triggers.py::TestOnASchedule::test_deleting_it_stops_its_check',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0549'
+describes = 'TRIGGERS: a saved change checks the triggers watching its types'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '            checks.after_change({sub.object_type for sub in pending.sub_writes})'
+new = '            pass'
+tests = [
+    'tests/integration/test_trigger_checks.py::TestWhenAChangeIsSaved::test_a_saved_change_fires_the_trigger_it_moved',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0550'
+describes = 'TRIGGERS: a new trigger is checked when it is made'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        checks.after_made(trigger_id)'
+new = '        pass'
+tests = [
+    'tests/integration/test_trigger_checks.py::TestWhenATriggerIsMade::test_it_is_checked_at_once',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0555'
+describes = 'INBOX: a merge counts only for someone who may write its type'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        if (authorize(current_user, roles, f"write:{proposal.object_type}")'
+new = '        if (True'
+tests = [
+    'tests/integration/test_inbox_app.py::TestTheCounts::test_a_merge_counts_only_for_someone_who_may_decide_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0556'
+describes = 'INBOX: a merge whose side the caller cannot see is not counted'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '                and _proposal_sides(request, current_user, proposal) is not None):'
+new = '                and True):'
+tests = [
+    'tests/integration/test_inbox_app.py::TestTheCounts::test_a_merge_whose_side_they_cannot_see_is_not_counted',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0557'
+describes = 'PENDING-IN-CONTEXT: an object shows only writes the Inbox would show the caller'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        return may_confirm(candidate) or candidate.user_id == current_user.user_id
+
+    store: PendingWriteStore = request.app.state.pending_writes
+    touching'''
+new = '''
+        return True
+
+    store: PendingWriteStore = request.app.state.pending_writes
+    touching'''
+tests = [
+    'tests/integration/test_pending_in_context.py::test_someone_who_may_not_decide_it_and_did_not_propose_it_sees_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0558'
+describes = 'PENDING-IN-CONTEXT: an unreadable object answers as nothing waiting'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '                if _may_read_object(generation.mediator, current_user, object_type, object_id)}'
+new = '                if True}'
+tests = [
+    'tests/integration/test_pending_in_context.py::test_an_object_they_cannot_read_is_answered_as_nothing_waiting',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0560'
+describes = 'NOTIFICATION-DOORS: an object the reader may no longer read is not linked'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if _may_read_object(mediator, user, object_type, object_id):
+            doors.append'''
+new = '''
+        if True:
+            doors.append'''
+tests = [
+    'tests/integration/test_inbox_app.py::TestNotificationDoors::test_one_they_can_no_longer_read_is_not_named',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0562'
+describes = 'E4: ordering by a field the caller may not read is ignored'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    if field_def is None or field_def.get("readable") is False:'
+new = '    if field_def is None:'
+tests = [
+    'tests/integration/test_a_field_they_may_not_read.py::test_sorting_by_it_is_ignored_and_reads_nothing_more',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0563'
+describes = 'CANVAS: security chains only for someone who may change roles'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if authorize(current_user, generation.config.roles, "manage:roles"):
+        layout["security_chains"]'''
+new = '''
+    if True:
+        layout["security_chains"]'''
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::TestTheSecurityLayer::test_anyone_else_gets_no_key_at_all_rather_than_an_empty_list',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0565'
+describes = 'CANVAS: a stored layout is cleaned again when it is read'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        layout = clean_layout(document, visible)
+'''
+new = '''
+        layout = {**{'positions': {}, 'areas': []}, **document}
+'''
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_a_type_whose_grant_was_withdrawn_is_not_named_back',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0566'
+describes = "READ-BACK: an answer's read-back and doors are built from real data only"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        read_back=read_back(real_data, agent_schema),
+        doors=doors(real_data, agent_schema),'''
+new = '''
+        read_back=read_back(result.gathered, agent_schema),
+        doors=doors(result.gathered, agent_schema),'''
+tests = [
+    'tests/integration/test_an_answer_comes_with_context.py::test_a_DENIED_read_is_never_read_back',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0567'
+describes = 'CONFIG-EDIT: only manage:deployment may change the deployment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not authorize(current_user, _generation(request).config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Needs manage:deployment")'''
+new = '''
+    if False:
+        pass'''
+tests = [
+    'tests/integration/test_editing_config_from_the_ui.py::test_someone_who_manages_users_but_not_the_deployment_may_not',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0568'
+describes = 'CONFIG-EDIT: a file changed since it was read is not overwritten'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if digest(current) != body.digest:
+        raise HTTPException(status_code=409, detail=(
+            "config.yaml has changed'''
+new = '''
+    if False:
+        raise HTTPException(status_code=409, detail=(
+            "config.yaml has changed'''
+tests = [
+    'tests/integration/test_editing_config_from_the_ui.py::test_a_change_since_it_was_read_is_refused_not_overwritten',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0569'
+describes = 'DEV_UI 13.7: an ontology changed since it was read is not overwritten'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if digest(current) != read_digest:
+        raise HTTPException(status_code=409, detail=(
+            f"{ONTOLOGY_FILE} has changed'''
+new = '''
+    if False:
+        raise HTTPException(status_code=409, detail=(
+            f"{ONTOLOGY_FILE} has changed'''
+tests = [
+    'tests/integration/test_describing_the_ontology.py::test_a_change_since_it_was_read_is_refused_not_overwritten',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0570'
+describes = 'CONFIG-EDIT: a file that would not load never reaches the disk'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        _load_candidate(request, {name: proposed for name, (_, proposed) in files.items()})
+'''
+new = '''
+        pass
+'''
+tests = [
+    'tests/integration/test_editing_config_from_the_ui.py::test_a_file_that_would_not_load_never_reaches_the_disk',
+    'tests/integration/test_describing_the_ontology.py::test_a_title_the_loader_refuses_never_reaches_the_disk',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0571'
+describes = 'CONFIG-EDIT: a failed reload puts the old file back'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    except Exception as e:
+        failed = put_back(written)
+'''
+new = '''
+    except Exception as e:
+        failed = []
+'''
+tests = [
+    'tests/integration/test_editing_config_from_the_ui.py::test_a_reload_that_fails_puts_the_old_file_back',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0579'
+describes = 'ENRICH-VOTE: the approver is shown every set'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '"rule_sets": describe_recipe(recipe.rules)'
+new = '"rule_sets": []'
+tests = [
+    'tests/integration/test_enriched_fields_reach_gold.py::test_an_approved_vote_fills_the_field_and_its_review_shows_every_set',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0591'
+describes = 'EXTRACT: the approver is told what kind of value is taken'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        "extracts": enrichment.extract,'
+new = '        "extracts": None,'
+tests = [
+    'tests/integration/test_enriched_fields_reach_gold.py::test_an_extracted_number_reaches_gold_typed_and_its_review_says_what_it_takes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0637'
+describes = 'PREDICT: the decide route refuses what may not be approved'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if body.approve and shown["refusal"]:'
+new = '    if False:'
+tests = [
+    'tests/integration/test_predicted_fields.py::TestReviewing::test_no_better_than_guessing_is_refused_but_may_be_rejected',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0638'
+describes = 'PREDICT: a proposal is seen and decided only in its own compartment'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if proposal.compartment is not None and proposal.compartment != current_user.security_value:'
+new = '    if False:'
+tests = [
+    'tests/integration/test_predicted_fields.py::TestReviewing::test_seen_only_in_its_own_compartment',
+    'tests/integration/test_predicted_fields.py::TestReviewing::test_another_compartments_proposal_cannot_be_decided',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0639'
+describes = 'PREDICT: reviewing a prediction needs managing the deployment'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not authorize(current_user, roles, "manage:deployment"):
+        return None
+    if proposal.compartment'''
+new = '''
+    if False:
+        return None
+    if proposal.compartment'''
+tests = [
+    'tests/integration/test_predicted_fields.py::TestReviewing::test_not_seen_without_managing_the_deployment',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0640'
+describes = 'PREDICT: reviewing a prediction needs reading every input'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    for name in (proposal.field_name, prediction.target, *prediction.inputs,'
+new = '    for name in (proposal.field_name, prediction.target,'
+tests = [
+    'tests/integration/test_predicted_fields.py::TestReviewing::test_not_seen_without_reading_every_input',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0666'
+describes = 'FORECAST: a cut-off set is not forecast'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if search_outcome.scan_truncated:
+        # A SHORT TOTAL IS NOT A TREND'''
+new = '''
+    if False:
+        # A SHORT TOTAL IS NOT A TREND'''
+tests = [
+    'tests/integration/test_forecast_api.py::test_a_cut_off_set_is_not_forecast',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0667'
+describes = 'FORECAST: only a count or a sum'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if body.aggregate not in ("count", "sum"):'
+new = '    if False:'
+tests = [
+    'tests/integration/test_forecast_api.py::test_only_a_count_or_a_sum',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0686'
+describes = 'UNUSUAL: the marker needs read on every field it was compared within'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        authorize(current_user, roles, f"read:{flag.object_type}.{name}") for name in names)'
+new = '        authorize(current_user, roles, f"read:{flag.object_type}.{name}") for name in names[:1])'
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheMarker::test_not_without_reading_every_field_it_was_compared_within',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0687'
+describes = 'UNUSUAL: a flag is shown only in the compartment it was judged in'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if flag.compartment is not None and flag.compartment != current_user.security_value:'
+new = '    if False:'
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheMarker::test_a_flag_from_another_compartment_is_not_shown_on_a_readable_record',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0688'
+describes = 'UNUSUAL: a value marked expected is not marked for anyone'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        if flag.decision == "expected" or not _may_see_flag(generation, current_user, flag):'
+new = '        if not _may_see_flag(generation, current_user, flag):'
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheMarker::test_expected_clears_it_for_everyone_until_the_value_changes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0689'
+describes = "UNUSUAL: the record's own read check answers for it"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    return {"unusual": {record_id: flags for record_id, flags in found.items()
+                        if _may_read_object('''
+new = '''
+    return {"unusual": {record_id: flags for record_id, flags in found.items()
+                        if True or _may_read_object('''
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheMarker::test_a_record_the_reader_cannot_see_is_not_answered',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0690'
+describes = 'UNUSUAL: a flag for a number no longer declared is not shown'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    if declared is None or flag.field not in declared[0]:'
+new = '    if declared is None:'
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheMarker::test_a_flag_the_declaration_no_longer_makes_is_not_shown',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0691'
+describes = 'UNUSUAL: a flag compared within other fields than declared is not shown'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if [field for field, _ in flag.kind] != list(declared[1]):'
+new = '    if False:'
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheMarker::test_a_flag_the_declaration_no_longer_makes_is_not_shown',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0692'
+describes = 'UNUSUAL: deciding needs write on the type'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '            and authorize(current_user, generation.config.roles, f"write:{flag.object_type}"))'
+new = '            )'
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheQueue::test_not_without_write_on_the_type',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0693'
+describes = 'UNUSUAL: a reviewer needs everything a reader of the flag needs'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    return (_may_see_flag(generation, current_user, flag)
+            and authorize('''
+new = '''
+    return (True
+            and authorize('''
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheQueue::test_not_without_read_on_every_field_compared_within',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0694'
+describes = 'UNUSUAL: the queue lists only records the reviewer may read'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+            if _may_review_flag(generation, current_user, flag)
+            and _may_read_object('''
+new = '''
+            if _may_review_flag(generation, current_user, flag)
+            and True or _may_read_object('''
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheQueue::test_a_record_the_reviewer_cannot_see_is_neither_listed_nor_decided',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0695'
+describes = 'UNUSUAL: a decision only on a record the reviewer may read'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+            or not _may_read_object(generation.mediator, current_user, flag.object_type,
+                                    flag.record_id)):'''
+new = '            or False):'
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheQueue::test_a_record_the_reviewer_cannot_see_is_neither_listed_nor_decided',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0696'
+describes = 'UNUSUAL: the Inbox counts only what waits on a decision'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    unusual = sum(1 for flag in _reviewable_flags(request, current_user) if flag.decision is None)'
+new = '    unusual = sum(1 for flag in _reviewable_flags(request, current_user))'
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheQueue::test_worth_a_look_keeps_the_marker_and_leaves_the_count',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0697'
+describes = 'UNUSUAL: every decision is audited'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    generation.mediator.audit_log.log_unusual_decision(
+'''
+new = '''
+    (lambda *a: None)(
+'''
+tests = [
+    'tests/integration/test_unusual_records.py::TestTheQueue::test_expected_clears_the_marker_for_everyone_and_is_audited',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0707'
+describes = 'PROGRESS: nothing is shown once the asker has changed'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    def steps(self, gathered: list[dict]) -> None:
+        """From the loop's thread, between hops."""
+        if self._still_them is None or not self._still_them():
+            return'''
+new = '''
+    def steps(self, gathered: list[dict]) -> None:
+        """From the loop's thread, between hops."""
+        if self._still_them is None:
+            return'''
+tests = [
+    'tests/integration/test_a_question_shows_its_steps.py::test_nothing_is_shown_once_the_asker_has_changed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0708'
+describes = "PROGRESS: a step is shown in the answer's own read-back, refusals stripped"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        return read_back(AgentLoop.filter_real_data(gathered), self._schema)'
+new = '        return read_back(gathered, self._schema)'
+tests = [
+    'tests/integration/test_a_question_shows_its_steps.py::test_a_refused_read_is_not_shown',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0709'
+describes = 'PROGRESS: only a client asking for the stream gets it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    if "application/x-ndjson" in request.headers.get("accept", ""):'
+new = '    if True:'
+tests = [
+    'tests/integration/test_a_question_shows_its_steps.py::test_a_plain_request_is_answered_exactly_as_before',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0710'
+describes = "PROGRESS: the stream ends with the question's own status and body"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '            return {"type": "done", "status": e.status_code, "body": {"detail": e.detail}}'
+new = '            return {"type": "done", "status": 200, "body": {"detail": e.detail}}'
+tests = [
+    'tests/integration/test_a_question_shows_its_steps.py::test_nothing_is_shown_once_the_asker_has_changed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0713'
+describes = 'PROGRESS: a person leaving ends the question through its own cancel events'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+                progress.left()
+'''
+new = '''
+                task.cancel()
+'''
+tests = [
+    'tests/integration/test_a_question_shows_its_steps.py::test_leaving_partway_ends_the_question_its_own_way',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0714'
+describes = 'PROGRESS: an event watched after leaving is set at once'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        self._cancels.append(cancel)
+        if self._left:
+            cancel.set()'''
+new = '        self._cancels.append(cancel)'
+tests = [
+    'tests/integration/test_a_question_shows_its_steps.py::test_an_event_watched_after_leaving_is_set_at_once',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0811'
+describes = 'ENRICH-REVIEW: a recipe from another compartment is not shown'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '            and recipe.provenance["compartment"] != current_user.security_value:'
+new = '            and False:'
+tests = [
+    'tests/integration/test_enriched_fields_reach_gold.py::TestReviewingARecipe::test_another_compartments_recipe_is_not_shown_or_decidable',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0812'
+describes = 'ENRICH-REVIEW: only manage:deployment reviews a recipe'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not authorize(current_user, roles, "manage:deployment"):
+        return None
+    if "compartment"'''
+new = '''
+    if False:
+        return None
+    if "compartment"'''
+tests = [
+    'tests/integration/test_enriched_fields_reach_gold.py::TestReviewingARecipe::test_without_manage_deployment_it_is_not_there',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0813'
+describes = 'ENRICH-REVIEW: rules for a changed question cannot be approved'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not shown["current"]:
+        raise HTTPException(status_code=409'''
+new = '''
+    if False:
+        raise HTTPException(status_code=409'''
+tests = [
+    'tests/integration/test_enriched_fields_reach_gold.py::TestReviewingARecipe::test_rules_for_a_question_nobody_asks_any_more_cannot_be_approved',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0818'
+describes = 'ADD-ON: an add-on not offered to this person is a 404'
+invariant = 'I1'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    module = next((m for m in offered if m.id == module_id and m.server is not None), None)'
+new = '    module = next((m for m in config.modules.modules if m.id == module_id), None)'
+tests = [
+    'tests/integration/test_addon_proxy.py::test_what_this_person_may_not_reach_is_a_404_alike',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0821'
+describes = "ADD-ON: the token names only the add-on's own permissions this person holds"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '                         if authorize(current_user, config.roles, module_grant(module.id, name))])'
+new = '                         ])'
+tests = [
+    'tests/integration/test_addon_proxy.py::test_a_declared_permission_offers_the_add_on_and_the_token_says_which_are_held',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0851'
+describes = "AGGREGATE ROUTE: a bucket's start is written as ISO 8601"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if isinstance(group, datetime.date):
+        return group.isoformat()'''
+new = '''
+    if False:
+        return group'''
+tests = [
+    'tests/unit/test_totals_by_duration.py::TestTheGroupsTheRouteWrites',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0852'
+describes = 'AGGREGATE ROUTE: the whole set is one row with an empty group'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '{"group": ({} if body.group_by is None'
+new = '{"group": ({"": None} if body.group_by is None'
+tests = [
+    'tests/integration/test_totals_by_period_api.py::test_the_set_with_no_group_by_is_one_row_with_an_empty_group',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0853'
+describes = "AGGREGATE ROUTE: each measure's field reaches the mediator"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '"aggregate": m.aggregate, "field": m.field}'
+new = '"aggregate": m.aggregate, "field": None}'
+tests = [
+    'tests/integration/test_totals_by_period_api.py::test_summed_by_week',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0866'
+describes = 'NEW FIELD: a field widening access waits for a second person'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        changes = {f"{f.object_type}.{f.name}": f.data_type or "string" for f in body.fields}
+        if not impact["widens"]:
+            written = _write_config_files(request, current_user, files, changes)'''
+new = '''
+        changes = {f"{f.object_type}.{f.name}": f.data_type or "string" for f in body.fields}
+        if True:
+            written = _write_config_files(request, current_user, files, changes)'''
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestWhenAGrantAlreadyNamesIt::test_it_waits_with_a_reason',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0867'
+describes = 'NEW FIELD: the waiting change needs a reason'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        reason = _reason(body.reason)
+        summary ='''
+new = '''
+        reason = body.reason or "-"
+        summary ='''
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestWhenAGrantAlreadyNamesIt::test_it_waits_with_a_reason',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0868'
+describes = 'NEW FIELD: the preview says when it would wait'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+"impact": impact, "needs_approval": impact["widens"],
+        "fields"'''
+new = '''
+"impact": impact, "needs_approval": False,
+        "fields"'''
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestWhenAGrantAlreadyNamesIt::test_it_waits_with_a_reason',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0869'
+describes = 'NEW FIELD: the source is asked through the source adapters and schema'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '(_generation(request).config.schema.get(object_type) or {})'
+new = '(_generation(request).mediator.schema.get(object_type) or {})'
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestThePreview::test_it_says_whether_the_source_has_the_column',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0870'
+describes = 'NEW FIELD: a source that is down is not checked, not an error'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = "    except Exception:  # noqa: BLE001 - a source that is down is not this change's fault"
+new = '    except KeyError:'
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestThePreview::test_a_source_that_cannot_say_is_not_checked',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0871'
+describes = 'NEW FIELD: a source with no way to ask is not checked'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    probe = getattr(adapter, "columns_present", None)'
+new = '    probe = adapter.columns_present'
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestThePreview::test_a_source_with_no_way_to_ask_is_not_checked',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0872'
+describes = "NEW FIELD: an empty answer from the source is not 'no such column'"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    return column in present if present else None'
+new = '    return column in present'
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestThePreview::test_a_source_that_reports_no_columns_is_not_checked',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0873'
+describes = 'NEW FIELD: the bindings file is written when a column needs it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+            current, bindings, [f.model_dump(exclude_none=True) for f in body.fields], FIELD_DATA_TYPES)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if bindings is not None and proposed_bindings != bindings:'''
+new = '''
+            current, bindings, [f.model_dump(exclude_none=True) for f in body.fields], FIELD_DATA_TYPES)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if False:'''
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestTheBindings::test_the_column_is_bound_in_the_bindings_file_in_the_same_generation',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0874'
+describes = 'NEW FIELD: the preview is for a manager of the deployment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    files = _proposed_new_fields(request, body)
+    _candidate, impact'''
+new = '''
+    files = _proposed_new_fields(request, body)
+    _candidate, impact'''
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestAddingAField::test_a_person_who_cannot_manage_the_deployment_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0875'
+describes = 'NEW FIELD: applying is for a manager of the deployment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_fields(request, body)
+        proposed ='''
+new = '''
+    with _config_edit_lock:
+        files = _proposed_new_fields(request, body)
+        proposed ='''
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestAddingAField::test_a_person_who_cannot_manage_the_deployment_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0876'
+describes = "NEW FIELD: the form is offered the mirror's data types"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '            "data_types": list(FIELD_DATA_TYPES)}'
+new = '            "data_types": ["string"]}'
+tests = [
+    'tests/integration/test_new_fields_from_the_ui.py::TestWhatTheFormOffers::test_the_data_types_are_the_mirrors_own_list',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0877'
+describes = 'SHARED LAYOUT: a reader is sent positions only of the types they may see'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+clean_layout(
+            {"positions": _canvas_store(request).get_shared()}, visible)["positions"]'''
+new = '{"positions": _canvas_store(request).get_shared()}["positions"]'
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_someone_who_cannot_see_a_type_is_not_sent_where_it_sits',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0879'
+describes = 'SHARED LAYOUT: only a manager is offered it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if authorize(current_user, generation.config.roles, "manage:deployment"):
+        layout["can_set_shared"] = True'''
+new = '''
+    if True:
+        layout["can_set_shared"] = True'''
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_only_someone_who_manages_the_deployment_is_offered_it_or_may_do_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0880'
+describes = 'SHARED LAYOUT: only a manager may save it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    visible = _generation(request).mediator.visible_schema(current_user)
+    try:
+        cleaned = clean_layout({"positions"'''
+new = '''
+    visible = _generation(request).mediator.visible_schema(current_user)
+    try:
+        cleaned = clean_layout({"positions"'''
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_only_someone_who_manages_the_deployment_is_offered_it_or_may_do_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0881'
+describes = 'SHARED LAYOUT: only the types the caller may place are taken'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = 'for k, v in body.positions.items()}}, visible)'
+new = 'for k, v in body.positions.items()}}, list(body.positions))'
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_nothing_they_can_place_is_a_refusal_not_a_silent_save',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0882'
+describes = 'SHARED LAYOUT: nothing to place is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if not cleaned["positions"]:
+        raise HTTPException(status_code=400, detail="None of those'''
+new = '''
+    if False:
+        raise HTTPException(status_code=400, detail="None of those'''
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_nothing_they_can_place_is_a_refusal_not_a_silent_save',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0883'
+describes = 'SHARED LAYOUT: a coordinate is checked as a personal one is'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = 'clean_layout({"positions": {k: v.model_dump() for k, v in body.positions.items()}}, visible)'
+new = '{"positions": {k: v.model_dump() for k, v in body.positions.items() if k in visible}}'
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_a_coordinate_that_is_not_a_number_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0884'
+describes = 'SHARED LAYOUT: clearing forgets it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    store.clear_shared()
+'''
+new = '''
+    pass
+'''
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_clearing_it_sends_everyone_back_to_the_automatic_layout',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0885'
+describes = 'SHARED LAYOUT: only a manager may clear it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    store = _canvas_store(request)
+    store.clear_shared()'''
+new = '''
+    store = _canvas_store(request)
+    store.clear_shared()'''
+tests = [
+    'tests/integration/test_the_ontology_canvas.py::test_only_a_manager_may_clear_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0886'
+describes = 'STREAMED QUERY: a model that cannot be reached is the last line, not a crash'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        except LLMUnavailable as e:
+            # THE STREAM'S 200'''
+new = '''
+        except ZeroDivisionError as e:
+            # THE STREAM'S 200'''
+tests = [
+    'tests/integration/test_a_question_shows_its_steps.py::test_a_model_that_cannot_be_reached_is_the_last_line_not_a_crash',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0887'
+describes = 'DEFAULT ORDER: ids made of digits are listed as numbers'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    matching_ids = sorted(matching_ids, key=id_sort_key)
+    if order_by:'''
+new = '''
+    matching_ids = sorted(matching_ids, key=sort_key)
+    if order_by:'''
+tests = [
+    'tests/integration/test_api.py::test_ids_made_of_digits_are_listed_as_numbers',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0912'
+describes = 'NEW TYPE: the apply route waits only when access widens'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        changes = {body.name: "new type"}
+        if not impact["widens"]:'''
+new = '''
+        changes = {body.name: "new type"}
+        if True:'''
+tests = [
+    'tests/integration/test_new_type_from_the_ui.py::TestListingItToEveryone::test_it_says_the_type_exists_so_it_waits_with_a_reason',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0913'
+describes = 'NEW TYPE: the preview says which columns the source lacks'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '[c for c in wanted if c not in present_columns] if present_columns else []'
+new = '[]'
+tests = [
+    'tests/integration/test_new_type_from_the_ui.py::TestThePreview::test_it_says_whether_the_source_has_the_table_and_columns',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0914'
+describes = 'NEW TYPE: the preview says whether the source has the table'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '(body.table in present_tables) if present_tables else None'
+new = 'True'
+tests = [
+    'tests/integration/test_new_type_from_the_ui.py::TestThePreview::test_it_says_whether_the_source_has_the_table_and_columns',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0915'
+describes = 'NEW TYPE: the apply route needs manage:deployment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_type'''
+new = '''
+    with _config_edit_lock:
+        files = _proposed_new_type'''
+tests = [
+    'tests/integration/test_new_type_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0916'
+describes = 'NEW TYPE: the source list needs manage:deployment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    return {"silos"'''
+new = '    return {"silos"'
+tests = [
+    'tests/integration/test_new_type_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0918'
+describes = "NEW TYPE: the source's own bookkeeping tables are not offered"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = 'if not t.startswith("sqlite_")'
+new = 'if True'
+tests = [
+    'tests/integration/test_new_type_from_the_ui.py::TestWhatTheFormOffers::test_the_tables_and_columns_a_source_holds',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0927'
+describes = 'NEW LINK: the preview says when the column is not in the table'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '            if body.foreign_key_column not in columns:'
+new = '            if False:'
+tests = [
+    'tests/integration/test_new_link_from_the_ui.py::TestThePreview::test_it_says_when_the_column_is_not_in_the_table',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0928'
+describes = 'NEW LINK: the preview says when the join table is not there'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '            if table not in tables:'
+new = '            if False:'
+tests = [
+    'tests/integration/test_new_link_from_the_ui.py::TestThePreview::test_it_says_when_the_join_table_or_its_columns_are_not_there',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0929'
+describes = 'NEW LINK: the preview says when a join column is not there'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '                if join.get(key) not in columns:'
+new = '                if False:'
+tests = [
+    'tests/integration/test_new_link_from_the_ui.py::TestThePreview::test_it_says_when_the_join_table_or_its_columns_are_not_there',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0930'
+describes = 'NEW LINK: the apply route needs manage:deployment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_link'''
+new = '''
+    with _config_edit_lock:
+        files = _proposed_new_link'''
+tests = [
+    'tests/integration/test_new_link_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0931'
+describes = 'NEW LINK: the type list needs manage:deployment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    schema = _generation(request).config.schema
+    return {"types"'''
+new = '''
+    schema = _generation(request).config.schema
+    return {"types"'''
+tests = [
+    'tests/integration/test_new_link_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0938'
+describes = 'USED BY: the route needs manage:deployment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    config = _generation(request).config
+    schema = config.schema
+    shared'''
+new = '''
+    config = _generation(request).config
+    schema = config.schema
+    shared'''
+tests = [
+    'tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_only_a_manager_of_the_deployment_may_ask',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0939'
+describes = 'USED BY: an unknown field is not found'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        elif field in (definition.get("fields") or {}) or field == definition.get("id_field"):'
+new = '        elif True:'
+tests = [
+    'tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_an_unknown_name_is_not_found',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0940'
+describes = 'USED BY: an unknown link is not found'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        known = any(item.get("link_type") == link'
+new = '        known = True or any(item.get("link_type") == link'
+tests = [
+    'tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_an_unknown_name_is_not_found',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0941'
+describes = 'USED BY: an unclear question is refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = "        raise HTTPException(status_code=400, detail=\"Ask for a type, a type's field, or a link.\")"
+new = '        found = []'
+tests = [
+    'tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_an_unclear_question_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0971'
+describes = 'a status that would widen access is refused rather than applied'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if impact["widens"]:
+            raise HTTPException(status_code=409, detail=(
+                "This would let someone read more than they can now, which a status never'''
+new = '''
+        if False:
+            raise HTTPException(status_code=409, detail=(
+                "This would let someone read more than they can now, which a status never'''
+tests = [
+    'tests/integration/test_deprecate_from_the_ui.py::TestAStatusNeverWidensAccess::test_if_the_permission_code_says_it_would_the_edit_is_refused_and_nothing_is_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0974'
+describes = 'only a manager of the deployment may deprecate'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    files = _proposed_status(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    return {'''
+new = '''
+    files = _proposed_status(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    return {'''
+tests = [
+    'tests/integration/test_deprecate_from_the_ui.py::TestWhoMay::test_only_a_manager_of_the_deployment',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0980'
+describes = 'only a deprecated name is removed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '    deprecated = bool(marks) and all(mark.get("status") == "deprecated" for mark in marks)'
+new = '    deprecated = True'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestOnlyWhatIsDeprecated::test_an_active_field_is_refused_and_told_what_to_do_first',
+    'tests/integration/test_removal_from_the_ui.py::TestOnlyWhatIsDeprecated::test_a_link_nobody_deprecated_is_refused_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0981'
+describes = 'a removal is refused while anything names the thing, judged again on apply'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    elif plan.blockers or plan.hidden:
+        reason = f"Something still names'''
+new = '''
+    elif False:
+        reason = f"Something still names'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhatBlocks::test_a_name_still_used_is_refused_with_what_uses_it',
+    'tests/integration/test_removal_from_the_ui.py::TestWhatBlocks::test_a_reference_made_after_the_preview_is_found_when_it_is_applied',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0982'
+describes = 'what only blockers the person cannot see name still refuses the removal'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    elif plan.blockers or plan.hidden:
+        reason = f"Something still names'''
+new = '''
+    elif plan.blockers:
+        reason = f"Something still names'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_removal_blocked_only_by_what_they_cannot_discover_still_cannot_go',
+    'tests/integration/test_removal_from_the_ui.py::TestWhenOnlyWhatTheyCannotSeeBlocksIt::test_the_apply_refuses_and_changes_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0983'
+describes = 'the preview says it cannot go when only hidden blockers remain'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    ready = plan.deprecated and not plan.blockers and not plan.hidden'
+new = '    ready = plan.deprecated and not plan.blockers'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhenOnlyWhatTheyCannotSeeBlocksIt::test_the_preview_says_it_cannot_go_and_how_many_it_will_not_name',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0984'
+describes = 'apply does not trust the preview: it judges the blockers itself'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        blocked = _blocked_answer(plan)
+        if blocked is not None:
+            return blocked
+'''
+new = ''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhatBlocks::test_a_reference_made_after_the_preview_is_found_when_it_is_applied',
+    'tests/integration/test_removal_from_the_ui.py::TestOnlyWhatIsDeprecated::test_an_active_field_is_refused_and_told_what_to_do_first',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0985'
+describes = 'a removal that would widen access is refused rather than applied'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if impact["widens"]:
+            raise HTTPException(status_code=409, detail=(
+                "This would let someone read more than they can now, which a removal never should.'''
+new = '''
+        if False:
+            raise HTTPException(status_code=409, detail=(
+                "This would let someone read more than they can now, which a removal never should.'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestRemoving::test_if_the_permission_code_says_it_would_widen_access_nothing_is_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0986'
+describes = 'a configuration the loader refuses is reported without what the loader said'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+            _candidate, impact = _access_impact(request, {name: text for name, (_, text) in files.items()})
+        except HTTPException as e:
+            raise _unloadable(plan) from e'''
+new = '''
+            _candidate, impact = _access_impact(request, {name: text for name, (_, text) in files.items()})
+        except HTTPException:
+            raise'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestRemoving::test_the_loader_has_the_last_word',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0987'
+describes = 'a reload that fails after the write is reported without what the loader said'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+            if e.status_code == 400:
+                raise _unloadable(plan) from e'''
+new = '''
+            if False:
+                raise _unloadable(plan) from e'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhenTheReloadFails::test_the_old_file_is_put_back_and_the_reply_names_nothing_the_loader_said',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0988'
+describes = 'a name the deployment does not have is Not found, not a reply that depends on what it is'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if field not in (running.get(object_type) or {}).get("fields", {}):
+            raise _not_found()'''
+new = '''
+        if False:
+            raise _not_found()'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_name_the_deployment_does_not_have_is_not_found_on_preview_and_apply',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0989'
+describes = 'a link type the deployment does not have is Not found'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        ends = link_ends(running, link)
+        if not ends:
+            raise _not_found()'''
+new = '''
+        ends = link_ends(running, link)
+        if False:
+            raise _not_found()'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_name_the_deployment_does_not_have_is_not_found_on_preview_and_apply',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0990'
+describes = 'only a manager of the deployment may preview a removal'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    plan = _planned_removal(request, current_user, body)
+    ready ='''
+new = '''
+    plan = _planned_removal(request, current_user, body)
+    ready ='''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhoMay::test_only_a_manager_of_the_deployment',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0991'
+describes = 'only a manager of the deployment may remove'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        plan = _planned_removal'''
+new = '''
+    with _config_edit_lock:
+        plan = _planned_removal'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhoMay::test_only_a_manager_of_the_deployment',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0992'
+describes = 'source_bindings.yaml is written with the ontology when a binding goes'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        proposed, proposed_bindings = apply_removal(current, bindings, change)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if bindings is not None and'''
+new = '''
+        proposed, proposed_bindings = apply_removal(current, bindings, change)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if False and'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestItsBindingGoesWithIt::test_the_binding_is_taken_out_of_source_bindings_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1001'
+describes = 'a removal renames source_bindings.yaml before the ontology'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = 'else (BINDINGS_FILE,))'
+new = 'else ())'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_the_bindings_are_renamed_first',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1002'
+describes = "a type's removal renames the ontology first (neither half-state loads)"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = 'first=() if body.kind == "type" else (BINDINGS_FILE,))'
+new = 'first=(BINDINGS_FILE,))'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestATypeIsRemovedWithItsBindingOrNotAtAll::test_the_ontology_is_renamed_first_for_a_type',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1003'
+describes = 'a rename that fails puts the file already renamed back'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        drop_staged(files)
+        failed = put_back(written)'''
+new = '''
+        drop_staged(files)
+        failed = []'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_a_failure_on_the_second_rename_puts_the_first_back_and_is_a_clean_error',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1004'
+describes = 'both files are staged before either is renamed, and the staging is cleaned up'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        drop_staged(staged_names)
+        raise refused(500, "The change was not applied: a file could not be written'''
+new = '        raise refused(500, "The change was not applied: a file could not be written'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_a_failure_staging_the_second_file_writes_neither',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1005'
+describes = 'a restore that fails too names both files and what to do'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '            raise stuck(failed, "a failed rename") from e'
+new = '            raise refused(500, "failed") from e'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_when_the_restore_fails_too_it_names_both_files_and_what_to_do',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1006'
+describes = 'after a failed reload every file is restored even when one restore raises'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+                drop_staged([name])
+                failed.append(name)'''
+new = '''
+                drop_staged([name])
+                failed.append(name)
+                break'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_after_a_failed_reload_every_file_is_tried_even_when_one_restore_fails',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1015'
+describes = 'a type is removed only once it is itself deprecated'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        marks = [schema[object_type]]
+'''
+new = '''
+        marks = [{"status": "deprecated"}]
+'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestRemovingAType::test_a_type_nobody_deprecated_is_refused_and_told_what_to_do_first',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1016'
+describes = "a type's removal is judged by the type blockers, not left unchecked"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        found = type_blockers(*shared, object_type,'
+new = '''
+        found = []
+        _unused = type_blockers(*shared, object_type,'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhatBlocksATypeFromGoing::test_the_link_is_shown_only_to_someone_who_can_discover_its_other_end',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1017'
+describes = 'a name that is not a type answers Not found, whoever asks'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if object_type not in running:
+            raise _not_found()'''
+new = '''
+        if False:
+            raise _not_found()'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestRemovingAType::test_an_unknown_name_is_not_found_on_preview_and_apply',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1035'
+describes = 'retype: only a manager of the deployment may preview a retype'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    files, from_type, tables, stored, shown, hidden = _planned_retype'''
+new = '    files, from_type, tables, stored, shown, hidden = _planned_retype'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhoMay::test_only_a_manager_of_the_deployment_and_the_denial_is_the_same_for_every_name',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1036'
+describes = 'retype: only a manager of the deployment may change a type'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files, _from,'''
+new = '''
+    with _config_edit_lock:
+        files, _from,'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhoMay::test_only_a_manager_of_the_deployment_and_the_denial_is_the_same_for_every_name',
+    'tests/integration/test_retype_from_the_ui.py::TestWhoMay::test_nothing_is_written_for_someone_who_may_not',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1037'
+describes = 'retype: a stale view of the file is refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    current = _ontology_as_read(request, body.digest)
+    mediator = _generation(request).mediator
+    running = mediator.schema
+    declared ='''
+new = '''
+    current = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()
+    mediator = _generation(request).mediator
+    running = mediator.schema
+    declared ='''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_a_stale_view_is_refused_on_both_and_nothing_is_changed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1038'
+describes = 'retype: a field the deployment does not have is Not found'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+    if declared is None:
+        raise _not_found()'''
+new = '''
+    if False:
+        raise _not_found()'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_what_is_refused_and_how[given3-404-Not found]',
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_what_is_refused_and_how[given4-404-Not found]',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1039'
+describes = 'retype: the loader judges the proposed file before anything is shown'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    after = _load_candidate(request, {ONTOLOGY_FILE: proposed})
+    tables = changed_tables('''
+new = '''
+    after = before
+    tables = changed_tables('''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_the_loader_has_the_last_word',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1040'
+describes = 'retype: the reply lists the tables whose silver must now be rebuilt'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '            owed, unknown = _tables_needing_rebuild(request, written["new_schema"]), False'
+new = '            owed, unknown = [], False'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_the_reply_lists_the_silver_table_that_now_needs_a_rebuild',
+    'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_the_preview_names_the_table_and_the_reply_lists_it_to_rebuild',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1041'
+describes = 'retype: places naming the field that the person cannot discover are counted, not shown'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))
+    # WHAT THE LAKE HOLDS NOW'''
+new = '''
+    shown, hidden = found, 0
+    # WHAT THE LAKE HOLDS NOW'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatNamesTheField::test_places_naming_what_the_person_cannot_discover_are_counted_not_named',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1042'
+describes = 'retype: the sync takes only rebuild names that need a rebuild right now'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+            if name not in needed:
+                raise refused(400,'''
+new = '''
+            if False:
+                raise refused(400,'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_a_name_that_needs_no_rebuild_is_refused_by_name_and_nothing_starts',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1043'
+describes = 'retype: the rebuild names reach the sync thread'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    thread_factory(target=functools.partial(_run_sync_in_background, set(rebuild) or None), daemon=True).start()'
+new = '    thread_factory(target=_run_sync_in_background, daemon=True).start()'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_the_route_hands_the_names_it_checked_to_the_thread',
+    'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_the_rebuild_is_still_owed_after_a_refused_sync_because_it_is_derived_not_remembered',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1044'
+describes = 'retype: the background sync passes the rebuild names to run_sync'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if rebuild:
+            run_sync(rebuild=rebuild)'''
+new = '''
+        if rebuild:
+            run_sync()'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_the_names_reach_the_sync_and_no_names_start_it_as_it_always_ran',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1045'
+describes = 'retype: a sync with no names calls run_sync as it always did, with no argument'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        if rebuild:
+            run_sync(rebuild=rebuild)'''
+new = '''
+        if True:
+            run_sync(rebuild=rebuild)'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_with_no_body_it_is_the_sync_it_always_was',
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_an_empty_list_is_the_same_as_no_body',
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_the_names_reach_the_sync_and_no_names_start_it_as_it_always_ran',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1046'
+describes = 'retype: the rebuild names are audited'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild", True, True)'
+new = '        audit_log.log_access(current_user.user_id, "_mirror", "_sync", "start", True, True)'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_the_rebuild_names_are_in_the_audit_log',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1047'
+describes = 'retype: the audit entry for a rebuild says it was allowed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild", True, True)'
+new = '        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild", None, True)'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_a_rebuild_is_audited_as_allowed_and_so_is_the_start',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1048'
+describes = 'retype: a refused rebuild is audited'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild_refused", False, True)'
+new = '        pass'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_a_name_that_needs_no_rebuild_is_refused_by_name_and_nothing_starts',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1049'
+describes = 'retype: a rebuild is not started while another sync holds the lock'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+            if not free:
+                raise refused(409,'''
+new = '''
+            if False:
+                raise refused(409,'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_while_another_sync_holds_the_lock_the_rebuild_is_refused_and_not_dropped_silently',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1050'
+describes = 'retype: a mirror that cannot be read refuses the rebuild in words, not with a traceback'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        except _MirrorUnreadable:
+            raise refused(503,'''
+new = '''
+        except ZeroDivisionError:
+            raise refused(503,'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestSyncRebuildNames::test_a_mirror_that_cannot_be_read_is_a_clear_refusal_and_not_a_traceback',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1051'
+describes = 'retype: an edit that has landed is not failed by a mirror that cannot be read'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '''
+        except _MirrorUnreadable:
+            owed, unknown = [], True'''
+new = '''
+        except ZeroDivisionError:
+            owed, unknown = [], True'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_a_mirror_that_cannot_be_read_does_not_fail_an_edit_that_has_landed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1052'
+describes = "retype: the reply separates this field's tables from every table owed a rebuild"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/routes.py'
+old = '                "tables": tables, "rebuild": owed, "rebuild_unknown": unknown}'
+new = '                "tables": owed, "rebuild": owed, "rebuild_unknown": unknown}'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_the_reply_says_which_tables_are_this_fields_and_which_are_owed_overall',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1058'
+describes = 'retype: only a manager of the deployment may ask what is owed a rebuild'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '''
+    _require_manage_deployment(request, current_user)
+    try:
+        return {"rebuild"'''
+new = '''
+    try:
+        return {"rebuild"'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatIsOwedAsked::test_only_a_manager_of_the_deployment_may_ask',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1072'
+describes = 'retype: the routes read a configuration file as its bytes, so CRLF is not turned into LF'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/routes.py'
+old = '    return path.read_bytes().decode("utf-8")'
+new = '    return path.read_text()'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestACrlfFileStaysCrlf::test_retype_keeps_every_line_end_and_the_digest_is_the_files_own',
+    'tests/integration/test_retype_from_the_ui.py::TestACrlfFileStaysCrlf::test_a_file_mixing_line_ends_is_refused_and_untouched',
+    'tests/integration/test_retype_from_the_ui.py::TestACrlfFileStaysCrlf::test_a_removal_keeps_every_line_end',
+]
+expect = "fails"

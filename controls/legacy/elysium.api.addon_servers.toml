@@ -1,0 +1,79 @@
+[[control]]
+id = 'LEG-0822'
+describes = "ADD-ON: a server gets a bare environment, none of Elysium's secrets"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/addon_servers.py'
+old = '        environment = {name: os.environ[name] for name in ENVIRONMENT_KEPT if name in os.environ}'
+new = '        environment = dict(os.environ)'
+tests = [
+    'tests/integration/test_addon_lifecycle.py::test_it_starts_the_server_with_what_the_contract_promises',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0823'
+describes = 'ADD-ON: a server ignoring SIGTERM is killed at its deadline'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/addon_servers.py'
+old = '''
+            self._signal(signal.SIGKILL)
+            status = self.process.wait()'''
+new = '            status = None'
+tests = [
+    'tests/integration/test_addon_lifecycle.py::test_one_ignoring_sigterm_is_killed_at_its_deadline',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0824'
+describes = 'ADD-ON: one worker supervises each server'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/addon_servers.py'
+old = '        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)'
+new = '        pass'
+tests = [
+    'tests/integration/test_addon_lifecycle.py::test_one_worker_runs_it_and_another_takes_over_when_that_one_goes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0832'
+describes = "OUTBOX: an add-on's notice reaches only people offered the module"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/addon_servers.py'
+old = '[n for n in message.to if n in offered]'
+new = 'list(message.to)'
+tests = [
+    'tests/integration/test_addon_outbox.py::test_a_name_not_offered_the_module_is_dropped_and_counted_not_named',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0833'
+describes = 'OUTBOX: a file read twice is delivered once'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/addon_servers.py'
+old = 'dedupe_key=outbox_dedupe_key(module.id, path.name, user_id)) is not None:'
+new = ') is not None:'
+tests = [
+    'tests/integration/test_addon_outbox.py::test_a_file_read_twice_is_delivered_once',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0834'
+describes = 'OUTBOX: a notice left while the server is down is still delivered'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/addon_servers.py'
+old = '            if self._offered_to is not None and self._store is not None:'
+new = '            if self._offered_to is not None and self._store is not None and server.state == "running":'
+tests = [
+    'tests/integration/test_addon_outbox.py::test_a_notice_left_while_the_server_is_down_is_still_delivered',
+]
+expect = "fails"

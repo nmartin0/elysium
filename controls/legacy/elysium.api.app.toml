@@ -1,0 +1,102 @@
+[[control]]
+id = 'LEG-0227'
+describes = 'R13: the server refuses a lake with unapplied erasures'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/app.py'
+old = '        if ErasureRegister(erasures_db).unpurged():'
+new = '        if False:'
+tests = [
+    'tests/unit/test_erasure.py::test_the_server_will_not_serve_a_lake_with_unapplied_erasures',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0360'
+describes = 'PA001-G12: a route without a response model sends a decimal as a string'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/app.py'
+old = '''
+fastapi.encoders.ENCODERS_BY_TYPE[decimal.Decimal] = decimal_text
+'''
+new = ''
+tests = [
+    'tests/unit/test_decimals_leave_the_api_exactly.py::TestTheApi::test_a_route_without_a_response_model_sends_a_string',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0561'
+describes = 'MODEL-503: an unreachable model is a 503 naming no host'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/app.py'
+old = '    @app.exception_handler(LLMUnavailable)'
+new = '    @app.exception_handler(KeyboardInterrupt)'
+tests = [
+    'tests/integration/test_asking_about_a_set.py::test_a_model_that_cannot_be_reached_is_a_503_that_names_no_host',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0817'
+describes = 'ADD-ON: what an add-on answers is sandboxed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/app.py'
+old = '        if request.url.path.startswith(ADDON_PROXY_PREFIX):'
+new = '        if False:'
+tests = [
+    'tests/integration/test_addon_proxy.py::test_no_cookie_and_no_loopback_address_come_back_and_what_does_is_sandboxed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1098'
+describes = 'deprecation alert: the check runs on the existing timer service'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/app.py'
+old = '''
+                DEPRECATION_DATES: deprecation_timer,
+'''
+new = ''
+tests = [
+    'tests/unit/test_deprecation_alerts.py::test_the_app_runs_the_check_on_the_timer_service_it_already_has',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1130'
+describes = 'every API answer forbids caching unless its route says otherwise'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/app.py'
+old = '''
+        if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
+'''
+new = '''
+        if request.url.path.startswith("/apix/") and "cache-control" not in response.headers:
+'''
+tests = [
+    'tests/integration/test_every_api_get_forbids_caching.py::test_every_get_route_forbids_caching_unless_listed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1131'
+describes = 'a route that states its own Cache-Control keeps it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/app.py'
+old = '''
+        if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
+'''
+new = '''
+        if request.url.path.startswith("/api/"):
+'''
+tests = [
+    'tests/integration/test_api.py::test_a_modules_bundle_is_served_to_whoever_is_offered_it',
+]
+expect = "fails"

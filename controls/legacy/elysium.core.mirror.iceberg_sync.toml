@@ -1,0 +1,497 @@
+[[control]]
+id = 'LEG-0074'
+describes = 'a rename is reported as a rename, not as a bare removal'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '        appeared = tuple(sorted(set(present) - set(columns) - (before or set())))'
+new = '        appeared = ()'
+tests = [
+    'tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestARenamedColumn::test_a_rename_holds_the_table_at_its_last_good_copy',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0076'
+describes = 'a partial source read does not overwrite the mirror'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '        if not previous or row_count >= previous * (1 - MAX_DELETED_FRACTION):'
+new = '        if True:'
+tests = [
+    'tests/unit/test_a_partial_read_does_not_overwrite.py::TestTheMirrorIsLeftAlone::test_a_truncated_read_is_refused',
+    'tests/unit/test_a_partial_read_does_not_overwrite.py::TestTheMirrorIsLeftAlone::test_silver_still_serves_every_row',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0080'
+describes = 'bronze expires its own snapshots'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+            # request could be holding is a candidate.
+            try:'''
+new = '''
+            # request could be holding is a candidate.
+            if False:'''
+tests = [
+    'tests/unit/test_bronze_and_silver_expire_too.py::TestBothLayersCallIt::test_bronze_does',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0081'
+describes = 'silver expires its own snapshots'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+                # expire and a commit there would be pure cost.
+                try:'''
+new = '''
+                # expire and a commit there would be pure cost.
+                if False:'''
+tests = [
+    'tests/unit/test_bronze_and_silver_expire_too.py::TestBothLayersCallIt::test_silver_does',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0131'
+describes = 'R10: the sync asks for before-images'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '                                      before_images=True)'
+new = '                                      before_images=False)'
+tests = [
+    'tests/unit/test_history_of_a_source_row.py::test_a_renamed_customer_has_two_versions_and_one_is_current',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0223'
+describes = 'R13: a sync drops erased rows on the way in'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+            if suppression is not None:
+                from elysium.core.mirror.erasure import suppress_rows'''
+new = '''
+            if False:
+                from elysium.core.mirror.erasure import suppress_rows'''
+tests = [
+    'tests/unit/test_erasure.py::TestErasing::test_while_the_source_still_returns_them_every_sync_drops_them',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0224'
+describes = 'R13: the fallback read (bronze could not be written) drops erased rows too'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+        if suppression is not None:
+            from elysium.core.mirror.erasure import suppress_rows'''
+new = '''
+        if False:
+            from elysium.core.mirror.erasure import suppress_rows'''
+tests = [
+    'tests/unit/test_erasure.py::TestBothReadPathsSuppress::test_the_fallback_read_drops_erased_keys_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0249'
+describes = "ZOO-11: a quarantined row names the cell that failed, not the table's first"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '                failed = transformed.mismatched_cells.get(index) or ['
+new = '                failed = ['
+tests = [
+    'tests/unit/test_one_bad_cell_does_not_stop_a_table.py::TestTheQuarantineRecordNamesTheCellThatFailed::test_each_row_names_its_own_failing_column',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0253'
+describes = 'DEP-1: a number the database typed is never read through the locale'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '                    if column not in text_columns and any(issubclass(kind, str) for kind in kinds):'
+new = '                    if column not in text_columns:'
+tests = [
+    'tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestThroughARealSync::test_a_number_the_database_typed_is_never_read_through_the_locale',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0275'
+describes = 'R5: the bronze write streams the source rather than gathering it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '            for rows in itertools.chain(_drain(pending), batches):'
+new = '            for rows in list(itertools.chain(_drain(pending), batches)):'
+tests = [
+    'tests/unit/test_sync_reads_in_batches.py::test_the_source_rows_are_not_kept_while_the_next_batch_is_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0276'
+describes = 'R5: bronze is cleaned a bounded batch at a time'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '                batch.to_pylist() for batch in bronze.to_batches(max_chunksize=SYNC_BATCH_ROWS))'
+new = '                batch.to_pylist() for batch in bronze.to_batches())'
+tests = [
+    'tests/unit/test_sync_reads_in_batches.py::TestBatchingChangesNothingButTheCost::test_no_batch_larger_than_the_bound_reaches_the_clean_step',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0284'
+describes = 'R2: a declared table reads only the rows at or after its mark'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+            if reason is None and policy is not None:
+                changed_since = (policy.cursor, read_from('''
+new = '''
+            if False:
+                changed_since = (policy.cursor, read_from('''
+tests = [
+    'tests/unit/test_incremental_sync.py::TestTheNextSyncReadsOnlyWhatChanged::test_a_change_and_an_insert_arrive_and_nothing_else_is_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0286'
+describes = 'R2: changed rows are merged onto what bronze held'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '    return pa.concat_tables([kept, changed])'
+new = '    return changed'
+tests = [
+    'tests/unit/test_incremental_sync.py::TestTheNextSyncReadsOnlyWhatChanged::test_a_change_and_an_insert_arrive_and_nothing_else_is_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0287'
+describes = "R2: a changed row replaces bronze's row under its id"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '        previous = previous.filter(pc.invert(pc.fill_null(replaced, False)))'
+new = '        pass'
+tests = [
+    'tests/unit/test_incremental_sync.py::TestTheNextSyncReadsOnlyWhatChanged::test_a_change_and_an_insert_arrive_and_nothing_else_is_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0289'
+describes = 'R2: a full read is recorded as one'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+    if was_full:
+        properties[FULL_READ_PROPERTY] = started.isoformat()'''
+new = '''
+    if False:
+        properties[FULL_READ_PROPERTY] = started.isoformat()'''
+tests = [
+    'tests/unit/test_incremental_sync.py::TestTheFirstSyncIsFull::test_it_reads_everything_and_records_the_mark',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0292'
+describes = 'R2: which columns arrived as text is carried across reads'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '                text_columns |= set(json.loads('
+new = '                text_columns |= set() & set(json.loads('
+tests = [
+    'tests/unit/test_incremental_sync.py::TestWhatIsCarriedForward::test_a_locale_still_applies_to_rows_that_were_not_re_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0321'
+describes = 'PA001-A13: a changelog entry names the bronze snapshot it was compared with'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '                                   compared_with=bronze_table.current_snapshot().snapshot_id)'
+new = '                                   compared_with=None)'
+tests = [
+    'tests/unit/test_changelog_says_where_it_came_from.py::test_an_entry_names_its_bronze_snapshot_and_its_run',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0322'
+describes = "R3: bronze records how each column's text decodes"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '                    arrived[column] |= kinds'
+new = '                    pass'
+tests = [
+    'tests/unit/test_bronze_round_trip.py::test_the_encodings_are_recorded_per_column',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0324'
+describes = 'R3: a changed-rows read keeps the encodings bronze already knew'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '                        if changed_since is not None else {}), sort_keys=True),'
+new = '                        if False else {}), sort_keys=True),'
+tests = [
+    'tests/unit/test_bronze_round_trip.py::test_a_changed_rows_read_keeps_what_bronze_already_knew',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0338'
+describes = 'R33: silver records each cell its cleaning rules changed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '        self._write_cleaning(silo_name, table_name, id_column, transformed)'
+new = '        pass'
+tests = [
+    'tests/unit/test_cleaning_is_recorded_per_cell.py::test_each_changed_cell_is_recorded_with_its_rules',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0340'
+describes = 'R33: the record describes silver now rather than accumulating'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+                table.overwrite(arrow_table)
+        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:
+            logger.warning(f"cleaning record'''
+new = '''
+                table.append(arrow_table)
+        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:
+            logger.warning(f"cleaning record'''
+tests = [
+    'tests/unit/test_cleaning_is_recorded_per_cell.py::test_it_describes_silver_now_rather_than_accumulating',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0342'
+describes = 'R40: silver records the reference-data versions it was judged with'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '        return {REFERENCE_DATA_PROPERTY: json.dumps(used, sort_keys=True)}'
+new = '        return {}'
+tests = [
+    'tests/unit/test_reference_data_is_versioned.py::test_the_versions_used_are_recorded',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0343'
+describes = 'R40: a changed reference-data version is warned about on an unchanged table'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+                    tx.set_properties({
+                        **_read_properties(read_started_at, self._run_id),
+                        **self._reference_data(table, silo_name, table_name,
+                                               standardisation, expectations)})'''
+new = '''
+                    tx.set_properties({
+                        **_read_properties(read_started_at, self._run_id)})'''
+tests = [
+    'tests/unit/test_reference_data_is_versioned.py::test_a_changed_version_is_warned_about_even_when_the_data_did_not_change',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0347'
+describes = 'Review: a cleaned cell stays with its own person when rows are held for a mismatch'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+                cleaned_cells=[(kept_position[index], *rest)
+                               for index, *rest in transformed.cleaned_cells
+                               if index in kept_position])'''
+new = '                )'
+tests = [
+    'tests/unit/test_cleaning_is_recorded_per_cell.py::TestWhatAReviewFound::test_each_cell_stays_with_its_own_person',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0353'
+describes = 'Review: rules that stop using reference data leave no stale record'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '            return ({REFERENCE_DATA_PROPERTY: "{}"}'
+new = '            return ({}'
+tests = [
+    'tests/unit/test_reference_data_is_versioned.py::test_a_table_whose_rules_stop_using_it_keeps_no_stale_record',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0726'
+describes = 'SOURCES: corrected source types are kept under their own key'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = 'SOURCE_TYPES_PROPERTY = "elysium.source_column_types.v2"'
+new = 'SOURCE_TYPES_PROPERTY = "elysium.source_column_types"'
+tests = [
+    'tests/unit/test_source_type_drift.py::test_the_corrected_types_have_their_own_key',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0731'
+describes = 'SOURCES: an absorbed column travels on the sync result'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '            absorbed_drift = verdict.detail'
+new = '            absorbed_drift = None'
+tests = [
+    'tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestAnAbsorbedColumnIsRecorded::test_the_result_carries_the_explanation',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0745'
+describes = 'SOURCES: rows hidden from the sync travel on its result'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '        hidden_rows = _rows_hidden(adapter, table_name)'
+new = '        hidden_rows = None'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::test_a_sync_carries_the_warning_onto_its_result',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0747'
+describes = 'SOURCES: a refused empty read names row-level security as the likely cause'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = 'self._refuse_suspected_partial_read(silo_name, table_name, row_count, hidden_rows)'
+new = 'self._refuse_suspected_partial_read(silo_name, table_name, row_count, None)'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::test_a_refused_empty_read_names_the_likely_cause_first',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0796'
+describes = 'SYNC: an empty read with rows hidden from the account is refused'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '        if getattr(hidden_rows, "every_row", False) and row_count == 0:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::TestAnEmptyReadWithRowsHidden::test_a_first_sync_that_reads_nothing_is_refused_and_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0802'
+describes = 'SYNC: a table gone from the source is named as gone'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+        if tables is None or table_name in tables:
+            return'''
+new = '''
+        if True:
+            return'''
+tests = [
+    'tests/unit/test_a_missing_source_table.py::TestOnSQLite::test_a_dropped_table_is_named_as_gone',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0804'
+describes = "SYNC: a lagging standby's copy is dated from its last replayed change"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+            read_started = behind.as_of
+'''
+new = ''
+tests = [
+    'tests/unit/test_a_lagging_standby.py::test_a_lagging_standby_dates_the_copy_from_its_last_change',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1084'
+describes = 'retype: the sync refuses silver whose type changed until it is rebuilt'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+    if not changed or identifier in rebuild:
+        return
+    described'''
+new = '''
+    if True:
+        return
+    described'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_silver_is_refused_until_rebuilt_and_the_old_silver_stays_as_it_was',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1085'
+describes = 'retype: a rebuild drops silver and builds it again from bronze'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/iceberg_sync.py'
+old = '''
+            if identifier in self._rebuild:
+'''
+new = '''
+            if False:
+'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_a_rebuild_makes_silver_the_new_type_with_a_history_of_its_own',
+]
+expect = "fails"

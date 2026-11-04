@@ -1,0 +1,47 @@
+[[control]]
+id = 'LEG-0277'
+describes = 'R5: SQLite fetches the table in pieces'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlite_adapter.py'
+old = '        while batch := cursor.fetchmany(batch_size):'
+new = '        while batch := cursor.fetchall():'
+tests = [
+    'tests/unit/test_sync_reads_in_batches.py::TestTheAdapterBatches::test_sqlite_yields_the_same_rows_in_bounded_pieces',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0285'
+describes = 'R2: the boundary is inclusive'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/sqlite_adapter.py'
+old = 'WHERE {_q(cursor_column)} >= ?'
+new = 'WHERE {_q(cursor_column)} > ?'
+tests = [
+    'tests/unit/test_incremental_sync.py::TestTheNextSyncReadsOnlyWhatChanged::test_the_boundary_is_inclusive',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0371'
+describes = 'FLAKE-1: a batched source read is one statement, so a write mid-read cannot tear it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlite_adapter.py'
+old = '''
+        cursor = conn.execute(sql, params)
+        while batch := cursor.fetchmany(batch_size):
+            yield [dict(row) for row in batch]
+'''
+new = '''
+        done = 0
+        while batch := conn.execute(sql, params).fetchall()[done:done + batch_size]:
+            done += len(batch)
+            yield [dict(row) for row in batch]
+'''
+tests = [
+    'tests/unit/test_sync_snapshot_semantics.py::test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_writes',
+]
+expect = "fails"

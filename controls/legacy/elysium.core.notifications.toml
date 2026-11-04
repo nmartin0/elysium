@@ -1,0 +1,44 @@
+[[control]]
+id = 'LEG-0442'
+describes = 'R13: an answer built from an erased object is forgotten'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/core/notifications.py'
+old = '                if any_erased(key_hash, hashes_by_type, subjects):'
+new = '                if False:'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_an_answer_built_from_them_is_forgotten',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0510'
+describes = 'INBOX: writing a notification announces it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/notifications.py'
+old = '''
+        for listener in list(_listeners):
+            try:
+                listener(user_id)'''
+new = '''
+        for listener in []:
+            try:
+                listener(user_id)'''
+tests = [
+    'tests/integration/test_inbox_signal.py::test_writing_a_notification_announces_the_recipient_only',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0523'
+describes = 'ONCE: a notification with a seen key is not written twice'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/notifications.py'
+old = '                    "INSERT OR IGNORE INTO notifications (notification_id, user_id, "'
+new = '                    "INSERT INTO notifications (notification_id, user_id, "'
+tests = [
+    'tests/unit/test_reminders.py::TestWhenItFires::test_delivered_twice_it_is_one_notice',
+]
+expect = "fails"

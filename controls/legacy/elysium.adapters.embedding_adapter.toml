@@ -1,0 +1,116 @@
+[[control]]
+id = 'LEG-0607'
+describes = 'MEANING: the embedder asks the generic endpoint on the server origin'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '        url = f"{self.origin}/v1/embeddings"'
+new = '        url = f"{self.origin}/api/embed"'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_it_asks_the_generic_endpoint_on_the_chat_servers_origin',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0608'
+describes = 'MEANING: a reply without one vector per text is refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '        if [int(entry["index"]) for entry in ordered] != list(range(len(texts))) or not all('
+new = '        if False and not all('
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_reply_without_one_vector_per_text_is_unavailable',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0609'
+describes = 'MEANING: stored text and asked text get their task prefixes'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '        return self._embed([self.prefixes["query"] + text], timeout)[0]'
+new = '        return self._embed([text], timeout)[0]'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_model_that_needs_task_prefixes_gets_them',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0610'
+describes = "MEANING: a model family's required prefixes are its default"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '        if model.startswith(family):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_model_that_needs_task_prefixes_gets_them',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0611'
+describes = 'MEANING: vectors are put back in the order asked'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '            ordered = sorted(data, key=lambda entry: int(entry["index"]))'
+new = '            ordered = list(data)'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_vectors_come_back_in_the_order_asked_whatever_order_they_arrive',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0612'
+describes = 'MEANING: the version changes with the prefixes'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '        return f"{weights}{size}{prefixes}"'
+new = '        return f"{weights}{size}"'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_its_version_names_the_weights_and_the_prefixes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0618'
+describes = 'MEANING-SIZE: a smaller size is asked of the server'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '            payload["dimensions"] = self.dimensions'
+new = '            pass'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_smaller_size_is_asked_for_and_held_to',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0619'
+describes = 'MEANING-SIZE: a vector of another size is refused, not cut'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '        if self.dimensions is not None and any(len(vector) != self.dimensions'
+new = '        if False and any(len(vector) != self.dimensions'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_smaller_size_is_asked_for_and_held_to',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0620'
+describes = 'MEANING-SIZE: the size is part of the version'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/embedding_adapter.py'
+old = '        return f"{weights}{size}{prefixes}"'
+new = '        return f"{weights}{prefixes}"'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheEmbedder::test_the_size_is_part_of_the_version',
+]
+expect = "fails"

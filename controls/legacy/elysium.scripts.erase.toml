@@ -1,0 +1,229 @@
+[[control]]
+id = 'LEG-0139'
+describes = 'R13 removed types: the erase command is not a success while a table is unreachable'
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/scripts/erase.py'
+old = '''
+        return 2
+    return 0'''
+new = '''
+        return 0
+    return 0'''
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestATableWrittenBeforeTheRecordExisted::test_the_command_says_so_and_does_not_report_success',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0140'
+describes = 'R13 removed types: a removed type can still be named to erase it'
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/scripts/erase.py'
+old = '    if object_type not in config.schema and object_type not in recorded_object_types(catalog):'
+new = '    if object_type not in config.schema:'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestAfterTheTypeIsRemoved::test_erasing_a_removed_type_s_person_reaches_every_layer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0155'
+describes = 'R13 removed types: a dry run names what a write could not search'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/erase.py'
+old = '''
+            for line in gap_notice(reach):
+                print(f"  WARNING {line}")'''
+new = '''
+            for line in []:
+                print(f"  WARNING {line}")'''
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestWhatTheRegisterAndTheSyncSay::test_a_dry_run_names_what_the_write_could_not_search',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0156'
+describes = "R13 removed types: an unknown type's refusal lists the tables erasure cannot search"
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/scripts/erase.py'
+old = '        unsearchable = survey(catalog, config.schema).unreachable'
+new = '        unsearchable = {}'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestATableWrittenBeforeTheRecordExisted::test_the_removed_type_cannot_even_be_named_when_no_table_recorded_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0157'
+describes = 'R13 removed types: --list shows an incomplete erasure'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/scripts/erase.py'
+old = "f\"  INCOMPLETE: {', '.join(erasure.incomplete_tables)}\""
+new = "f\"  DONE: {', '.join(erasure.incomplete_tables)}\""
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestWhatTheRegisterAndTheSyncSay::test_the_register_says_incomplete_and_the_list_shows_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0176'
+describes = 'R13 refuse: --write erases nothing while a relevant table cannot be fully searched'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/scripts/erase.py'
+old = '        if write and blocking and not erase_reachable_now:'
+new = '        if False:'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_it_erases_nothing_and_says_to_resolve_them_first',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0177'
+describes = 'R13 refuse: --erase-reachable-now overrides the refusal'
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/scripts/erase.py'
+old = '        if write and blocking and not erase_reachable_now:'
+new = '        if write and blocking:'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_the_override_erases_what_can_be_reached_and_records_it_incomplete',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0178'
+describes = 'R13 refuse: the dry run says --write would refuse'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/erase.py'
+old = '            if blocking and not erase_reachable_now:'
+new = '            if False:'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_the_dry_run_says_what_write_would_do',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0179'
+describes = 'R13 refuse: a healthy lake is not refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/erase.py'
+old = '        blocking = relevant_tables(reach_now, config.schema, set(counts))'
+new = "        blocking = list(reach_now.partly_known) + list(reach_now.unreachable) + ['x']"
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_a_healthy_lake_is_not_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0181'
+describes = 'R13 adopt all: the command refuses without the confirmation flag'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/erase.py'
+old = '''
+    if not confirmed:
+        print("This states'''
+new = '''
+    if False:
+        print("This states'''
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestAdoptingEverythingTheOntologyMaps::test_it_needs_the_confirmation_and_never_adopts_a_table_the_ontology_does_not_know',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0191'
+describes = 'R13 vouching: a wrong typed phrase still adopts'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/erase.py'
+old = '        if phrase != VOUCH_PHRASE:'
+new = '        if False:'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestVouchingForUnmappedColumnsNeedsATypedPhrase::test_nothing_is_adopted_without_the_exact_phrase',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0192'
+describes = 'R13 vouching: a run with no terminal and no flag is taken as the phrase'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/erase.py'
+old = '''
+    if not sys.stdin.isatty():
+        return None'''
+new = '''
+    if not sys.stdin.isatty():
+        return VOUCH_PHRASE'''
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestVouchingForUnmappedColumnsNeedsATypedPhrase::test_nothing_is_adopted_without_the_exact_phrase',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0193'
+describes = 'R13 vouching: the listing names the unmapped columns it vouches for'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/erase.py'
+old = '(", ".join(columns) if columns else "(every column is mapped)")'
+new = '"(every column is mapped)"'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestVouchingForUnmappedColumnsNeedsATypedPhrase::test_the_flag_phrase_adopts_and_the_listing_names_every_table_and_column',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0194'
+describes = 'R13 vouching: --typed-confirmation alone is accepted'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/erase.py'
+old = '        if args.typed_confirmation is not None and not args.including_unmapped_columns:'
+new = '        if False:'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestVouchingForUnmappedColumnsNeedsATypedPhrase::test_nothing_is_adopted_without_the_exact_phrase',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0218'
+describes = 'R13 adopt command: --keys and --ids for one column are merged, not overwritten'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/erase.py'
+old = '''
+            merged = {column: stated.get(column, set()) | stated_ids.get(column, set())
+                      for column in {*stated, *stated_ids}}'''
+new = '            merged = {**stated, **stated_ids}'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestAdoptingALegacyTable::test_keys_and_ids_for_one_column_are_both_kept_and_a_link_alone_makes_a_key',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0219'
+describes = 'R13 exit codes: a refusal is not the code of an erasure that is incomplete'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/scripts/erase.py'
+old = '''
+(Exit code 3: refused, nothing erased.)", file=sys.stderr)
+            return 3'''
+new = '''
+(Exit code 3: refused, nothing erased.)", file=sys.stderr)
+            return 2'''
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_it_erases_nothing_and_says_to_resolve_them_first',
+]
+expect = "fails"

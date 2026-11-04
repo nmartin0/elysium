@@ -1,0 +1,51 @@
+[[control]]
+id = 'LEG-0676'
+describes = 'UNUSUAL: a number is judged against records of its own kind'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/unusual.py'
+old = '            kind = tuple((name, row.get(name)) for name in within)'
+new = '            kind = ()'
+tests = [
+    'tests/unit/test_unusual.py::TestFinding::test_a_value_ordinary_for_the_table_but_wrong_for_its_kind_is_found',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0677'
+describes = 'UNUSUAL: the published cut-off, not a looser one'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/unusual.py'
+old = '                if abs(score) > THRESHOLD:'
+new = '                if abs(score) > 1.0:'
+tests = [
+    'tests/unit/test_unusual.py::TestFinding::test_clean_records_raise_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0678'
+describes = 'UNUSUAL: a kind too small to judge is not judged'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/unusual.py'
+old = '            if len(members) < MIN_GROUP:'
+new = '            if False:'
+tests = [
+    'tests/unit/test_unusual.py::TestFinding::test_a_kind_too_small_to_judge_is_not_judged',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0679'
+describes = 'UNUSUAL: at most a capped number, the furthest first'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/unusual.py'
+old = '    return flags[:MAX_FLAGS], len(flags)'
+new = '    return flags, len(flags)'
+tests = [
+    'tests/unit/test_unusual.py::TestFinding::test_the_furthest_first_and_at_most_a_capped_number',
+]
+expect = "fails"

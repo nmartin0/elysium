@@ -1,0 +1,456 @@
+[[control]]
+id = 'LEG-1103'
+describes = 'v2 sets: a field that may only be discovered cannot be used'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if info is None or info.get("readable") is not True:
+            raise _unknown_field(object_type, name)'''
+new = '''
+        if info is None:
+            raise _unknown_field(object_type, name)'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestAFieldTheCallerCannotReadIsIndistinguishableFromOneThatDoesNotExist::test_filtering',
+    'tests/integration/test_object_sets_evaluation.py::TestAFieldTheCallerCannotReadIsIndistinguishableFromOneThatDoesNotExist::test_sorting_selecting_and_measuring',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1104'
+describes = 'v2 sets: a withheld field is refused in different words from an absent one'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+            raise _unknown_field(object_type, name)
+        return info'''
+new = '''
+            raise (_unknown_field(object_type, name) if info is None
+                   else ObjectSetError(f"Field {name!r} is not readable."))
+        return info'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestAFieldTheCallerCannotReadIsIndistinguishableFromOneThatDoesNotExist::test_filtering',
+    'tests/integration/test_api_v2.py::TestOneObject::test_a_withheld_field_cannot_be_selected_and_is_the_same_400_as_a_missing_one',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1106'
+describes = 'v2 sets: a text operator on a non-text field is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if spec.data_type != "string" or spec.is_link:
+'''
+new = '''
+        if False:
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestOperatorsAgainstTheDeclaredType::test_a_wrong_operator_or_value_is_refused_before_any_data_is_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1107'
+describes = 'v2 sets: an ordering operator on a field with no order is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+    if node.operator != "eq" and (spec.is_link or spec.is_id or spec.data_type not in _ORDERED_TYPES):
+'''
+new = '''
+    if False:
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestOperatorsAgainstTheDeclaredType::test_a_wrong_operator_or_value_is_refused_before_any_data_is_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1108'
+describes = 'v2 sets: search-around follows declared links only'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if info is None or info.get("readable") is not True or not is_link_field(info):
+'''
+new = '''
+        if info is None or info.get("readable") is not True:
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestOperatorsAgainstTheDeclaredType::test_search_around_follows_declared_links_only',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1109'
+describes = 'v2 sets: a metric over a non-numeric field is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+            if spec.is_link or spec.data_type not in _NUMERIC_TYPES:
+'''
+new = '''
+            if False:
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestAggregating::test_a_metric_needs_a_readable_numeric_field',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1110'
+describes = 'v2 sets: nesting depth is capped'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+    if depth > MAX_SET_DEPTH:
+'''
+new = '''
+    if False:
+'''
+tests = [
+    'tests/unit/test_object_sets_parse.py::TestTheCaps::test_set_nesting_stops_at_the_depth_cap',
+    'tests/integration/test_api_v2.py::TestObjectSets::test_the_depth_cap_is_a_400',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1111'
+describes = 'v2 sets: the node count of a request is capped'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if self.left < 0:
+'''
+new = '''
+        if False:
+'''
+tests = [
+    'tests/unit/test_object_sets_parse.py::TestTheCaps::test_width_alone_cannot_make_a_request_huge',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1112'
+describes = "v2 sets: a static set's key count is capped"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if len(keys) > MAX_STATIC_KEYS:
+'''
+new = '''
+        if False:
+'''
+tests = [
+    'tests/unit/test_object_sets_parse.py::TestTheCaps::test_a_static_set_is_capped',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1113'
+describes = 'v2 sets: intersect keeps only what every set holds'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+            return [object_id for key, object_id in first.items() if all(key in other for other in others)]
+'''
+new = '''
+            return list(first.values())
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestTheSetAlgebra::test_union_intersect_and_subtract_over_what_alice_sees',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1114'
+describes = 'v2 sets: subtract removes what any later set holds'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        return [object_id for key, object_id in first.items() if not any(key in other for other in others)]
+'''
+new = '''
+        return list(first.values())
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestTheSetAlgebra::test_union_intersect_and_subtract_over_what_alice_sees',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1115'
+describes = 'v2 sets: union includes the later sets'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+                    merged.setdefault(str(object_id), object_id)
+'''
+new = '''
+                    pass
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestTheSetAlgebra::test_the_laws_hold_over_filters',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1116'
+describes = 'v2 sets: the whole filter is applied again after the search'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        return [object_id for object_id in candidates if self.predicate(rows.get(str(object_id), {}))]
+'''
+new = '''
+        return candidates
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestWhatTheOperatorsMean::test_each_operator',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1117'
+describes = 'v2 sets: only text equality is handed to the search'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if spec.data_type == "string" and all(isinstance(v, str) for v in values):
+'''
+new = '''
+        if all(isinstance(v, str) for v in values):
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestThroughTheMediatorAndNowhereElse::test_only_text_equality_is_pushed_down',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1118'
+describes = 'v2 sets: nulls sort last'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        result = present + missing
+'''
+new = '''
+        result = missing + present
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestOrdering::test_nulls_go_last_whichever_way_it_runs',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1119'
+describes = 'v2 sets: a key sorts as a number when it is only digits'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        order = id_sort_key if spec.is_id else sort_key
+'''
+new = '''
+        order = sort_key
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestOrdering::test_ordering_by_the_key_is_numeric_not_lexical',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1146'
+describes = 'v2 sets: a link to a type the caller cannot read is refused like an unknown field'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if (raw is not None and is_link_field(raw) and get_link_target(raw) in self.declared
+                and not self.has_type(get_link_target(raw))):
+            raise _unknown_field(object_type, name)
+'''
+new = '''
+        if False:
+            raise _unknown_field(object_type, name)
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_filter_may_name_it[startsWith-cust_001]',
+    'tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_ordering_may_name_it',
+    'tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_grouping_or_metric_may_name_it',
+    'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_link_to_a_type_the_caller_cannot_read_is_an_unknown_field_everywhere',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1147'
+describes = 'v2 sets: the filter-node cap is one budget for the whole request'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        return Filter(child, parse_filter(raw["where"], caps))
+'''
+new = '''
+        return Filter(child, parse_filter(raw["where"]))
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_filter_nodes_are_counted_across_every_filter_set',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1148'
+describes = 'v2 sets: the `in` values cap is one budget for the whole request'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        caps.in_values.spend(len(value))
+'''
+new = ''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_in_values_are_counted_across_every_in',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1149'
+describes = 'v2 sets: `in` matches by lookup in a set, not by scanning every value per row'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if wanted_set is not None:
+'''
+new = '''
+        if False:
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_in_matches_by_lookup_not_by_scanning_every_value',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1150'
+describes = 'v2 sets: what the leaves of one request may cost is capped in total and refused before it runs'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+    if _cost(node) > MAX_SCANNED_ROWS:
+'''
+new = '''
+    if False:
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_the_budget_is_charged_from_the_shape_before_anything_runs',
+    'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_a_static_leaf_costs_its_keys',
+    'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_request_that_reads_too_many_objects_is_refused_not_cut_short',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1152'
+describes = 'v2 sets: fields of more than one storage are refused with one fixed sentence'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        if len(storages) > 1:
+'''
+new = '''
+        if False:
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestOneStorageOnly::test_fields_of_two_storages_are_refused_with_one_sentence',
+    'tests/integration/test_object_sets_hidden_links.py::TestOneStorageOnly::test_ordering_and_grouping_across_storages',
+    'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_fields_of_two_storages_are_one_400_on_load_count_and_aggregate',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1162'
+describes = 'v2 sets: a set the scan ceiling may have cut short is refused, never returned as complete'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+            if not outcome.row_check_pushed:
+'''
+new = '''
+            if False:
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestNeverASilentCut::test_a_cut_that_may_hide_visible_rows_is_refused_the_same_for_everyone[us-east]',
+    'tests/integration/test_object_sets_hidden_links.py::TestNeverASilentCut::test_search_around_that_reaches_the_ceiling_is_refused_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1164'
+describes = 'v2 sets: a search leaf is charged the scan ceiling from the shape of the set'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+        return int(mediator_module.MAX_SEARCH_SCAN)
+    if isinstance(node, Static):
+'''
+new = '''
+        return 0
+    if isinstance(node, Static):
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_the_budget_is_charged_from_the_shape_before_anything_runs',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1165'
+describes = 'v2 sets: a link equality narrows the search by the targets the caller may read only'
+invariant = 'I7'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+            readable = run.mediator.readable_subset(run.user, target, list(values), run.context)
+'''
+new = '''
+            readable = list(values)
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_the_search_is_narrowed_only_by_link_targets_the_caller_may_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1166'
+describes = 'v2 sets: a link to a target that is not a declared type is an opaque reference, not a hidden one'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/object_sets.py'
+old = '''
+get_link_target(raw) in self.declared
+'''
+new = '''
+True
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestAnOpaqueReferenceIsNotAHiddenOne::test_a_link_to_a_type_that_is_not_declared_can_still_be_filtered',
+]
+expect = "fails"

@@ -1,0 +1,14 @@
+[[control]]
+id = 'LEG-0453'
+describes = 'R56: scoring never proposes a pair the declared rule merged'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/match_cascade.py'
+old = '''
+        if same is not None and same == groups.get(candidate.right_id):
+            continue'''
+new = '        pass'
+tests = [
+    'tests/unit/test_match_cascade.py::TestTheRuleIsStageOne::test_scoring_never_proposes_what_the_rule_merged',
+]
+expect = "fails"

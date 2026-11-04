@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0641'
+describes = 'PREDICT: one approval per compartment, superseding only its own'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/prediction_proposals.py'
+old = '                    "AND field_name = ? AND declaration_hash = ? AND compartment = ? "'
+new = '                    "AND field_name = ? AND declaration_hash = ? AND ? IS NOT NULL "'
+tests = [
+    'tests/unit/test_prediction_proposals.py::TestTheStore::test_one_approval_per_compartment_and_a_new_one_supersedes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0642'
+describes = 'PREDICT: only an approval for the current question is trained'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/prediction_proposals.py'
+old = '''
+                    "field_name = ? AND declaration_hash = ? AND status = 'approved' "
+                    "ORDER BY decided_at DESC",'''
+new = '''
+                    "field_name = ? AND ? IS NOT NULL AND status = 'approved' "
+                    "ORDER BY decided_at DESC",'''
+tests = [
+    'tests/unit/test_prediction_proposals.py::TestTheStore::test_only_an_approved_proposal_for_the_current_question_is_trained',
+]
+expect = "fails"

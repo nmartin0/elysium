@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0436'
+describes = "R13: the write log forgets an erased object's edits"
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/write_log.py'
+old = '            doomed = [row for row in rows if erased(row["object_type"], row["object_id"])]'
+new = '            doomed = []'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_the_write_log_forgets_their_edits_and_keeps_the_rest',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0437'
+describes = 'R13: a batch that touched them keeps its other sub-writes, without its description'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_log.py'
+old = '                if len(kept) == len(sub_writes) and batch["id"] not in touched:'
+new = '                if True:'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_the_write_log_forgets_their_edits_and_keeps_the_rest',
+]
+expect = "fails"

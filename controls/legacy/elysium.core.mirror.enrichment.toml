@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0589'
+describes = "EXTRACT: gold reads the text by the source's locale"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/enrichment.py'
+old = '                fields[field_name][APPROVED_LOCALE] = locale'
+new = '                fields[field_name][APPROVED_LOCALE] = None'
+tests = [
+    'tests/unit/test_enriched_fields.py::TestGold::test_an_extracted_amount_is_typed_by_the_sources_locale',
+]
+expect = "fails"

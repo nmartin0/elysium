@@ -1,0 +1,16 @@
+[[control]]
+id = 'LEG-1136'
+describes = 'a silo may not be named after the manifest directory or the conflicts layer'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/lake_names.py'
+old = '''
+    GOLD_NAMESPACE, GOLD_HISTORY_NAMESPACE, GOLD_CONFLICTS_NAMESPACE, MANIFEST_PREFIX,
+)'''
+new = '''
+    GOLD_NAMESPACE, GOLD_HISTORY_NAMESPACE,
+)'''
+tests = [
+    'tests/unit/test_a_silo_may_not_be_named_after_a_layer.py::TestNamesThatCollide::test_a_layer_namespace_is_refused',
+]
+expect = "fails"

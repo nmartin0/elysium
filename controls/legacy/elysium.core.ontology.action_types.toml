@@ -1,0 +1,42 @@
+[[control]]
+id = 'LEG-0302'
+describes = 'R37: an action that sets a derived field is refused at load'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/action_types.py'
+old = '        if is_computed(object_types[object_type]["fields"].get(property_name) or {}):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_derived_fields.py::test_an_action_that_sets_a_derived_field_is_refused_at_load',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0496'
+describes = 'TRIGGERS: owner approval beside automatable false is refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/action_types.py'
+old = '    if value and action_def.get("automatable") is False:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_automatable.py::TestOwnerMayApproveAutomation::test_beside_automatable_false_it_is_a_contradiction',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0497'
+describes = "TRIGGERS: the Watch dialog's second-person answer honours the owner setting"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/action_types.py'
+old = '''
+    if action_def.get("owner_may_approve_automation") is True:
+        return False'''
+new = '''
+    if False:
+        return False'''
+tests = [
+    'tests/unit/test_automatable.py::TestWhetherAnotherPersonApproves::test_unless_the_action_lets_the_owner',
+]
+expect = "fails"

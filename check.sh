@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check.sh [--fast|--full] [-k EXPR] -- every gate, in one place.
+# check.sh [--fast|--full|--area A] [-k EXPR] -- every gate, in one place.
 #
 # Runs every step even after a failure, prints `step | exit | seconds`
 # and exits non-zero when any step failed. A step that is not applicable
@@ -11,6 +11,7 @@
 #            with -k, the tests matching EXPR), the controls' anchors
 #            and the UI lint.
 #   --full   the same with every test, every control fired, and vitest before the UI lint.
+#   --area A fire only the controls of area A (controls/A/) and nothing else.
 #   -k EXPR  pytest's -k expression for the test step.
 #
 # Environment: CHECK_SH_STEPS_FILE names a file of `name<TAB>command`
@@ -19,10 +20,20 @@ set -uo pipefail
 
 mode=fast
 expr=
+area=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --fast) mode=fast ;;
         --full) mode=full ;;
+        --area)
+            if [ "$#" -lt 2 ]; then
+                echo "check.sh: --area needs an area name" >&2
+                exit 2
+            fi
+            mode=area
+            area=$2
+            shift
+            ;;
         -k)
             if [ "$#" -lt 2 ]; then
                 echo "check.sh: -k needs an expression" >&2
@@ -32,7 +43,7 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         *)
-            echo "usage: ./check.sh [--fast|--full] [-k EXPR]" >&2
+            echo "usage: ./check.sh [--fast|--full|--area A] [-k EXPR]" >&2
             exit 2
             ;;
     esac
@@ -69,6 +80,7 @@ skip() {
 }
 
 export CHECK_EXPR=$expr
+export CHECK_AREA=$area
 
 if [ -n "${CHECK_SH_STEPS_FILE:-}" ]; then
     while IFS=$'\t' read -r name cmd; do
@@ -76,6 +88,8 @@ if [ -n "${CHECK_SH_STEPS_FILE:-}" ]; then
             step "$name" "$cmd"
         fi
     done < "$CHECK_SH_STEPS_FILE"
+elif [ "$mode" = area ]; then
+    step "controls:$area" 'python tools/check_controls.py --area "$CHECK_AREA"'
 else
     step ruff "ruff check"
     step mypy "mypy"
@@ -105,10 +119,10 @@ else
     fi
 
     if [ "$mode" = full ]; then
-        step controls "python -m elysium.scripts.check_controls"
+        step controls "python tools/check_controls.py"
         step ui "cd ui && npx vitest run && npm run lint"
     else
-        step controls "python -m elysium.scripts.check_controls --report-moves"
+        step controls "python tools/check_controls.py --report-moves"
         step ui "cd ui && npm run lint"
     fi
 fi

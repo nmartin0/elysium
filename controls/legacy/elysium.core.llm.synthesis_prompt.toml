@@ -1,0 +1,53 @@
+[[control]]
+id = 'LEG-0465'
+describes = 'R63: code appends the inferred-values note to the answer'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/synthesis_prompt.py'
+old = '    return answer + cut + for_the_reader(found)'
+new = '    return answer + cut'
+tests = [
+    'tests/unit/test_answers_say_what_is_inferred.py::TestCodeEnforcesIt::test_the_note_is_appended_whatever_the_model_wrote',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0702'
+describes = 'TIMING: the answer call is recorded as the answer'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/synthesis_prompt.py'
+old = '                usage=usage.for_part("answer") if usage is not None else None,'
+new = '                usage=usage,'
+tests = [
+    'tests/unit/test_where_a_questions_time_goes.py::TestEachCallSaysWhatItIsFor::test_a_step_a_plan_and_an_answer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0719'
+describes = 'ANSWER: a cut answer says it was cut'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/synthesis_prompt.py'
+old = '    cut = CUT_SHORT_NOTE if written is not None and written.stopped_at_limit else ""'
+new = '    cut = ""'
+tests = [
+    'tests/unit/test_shorter_answers.py::TestTheAnswer::test_a_cut_answer_says_so',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0720'
+describes = 'ANSWER: brief is asked for only when switched on'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/synthesis_prompt.py'
+old = '''
+    if brief:
+        system_prompt += _BRIEF_NOTE'''
+new = '    system_prompt += _BRIEF_NOTE'
+tests = [
+    'tests/unit/test_shorter_answers.py::TestTheAnswer::test_brief_is_asked_for_only_when_switched_on',
+]
+expect = "fails"

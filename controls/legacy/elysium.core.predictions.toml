@@ -1,0 +1,133 @@
+[[control]]
+id = 'LEG-0627'
+describes = 'PREDICT: the model is judged on records it never learned from'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/predictions.py'
+old = '    held_model = _model(prediction, encoding, seed).fit(encoding.matrix(train_rows), train_y)'
+new = '''
+    held_model = _model(prediction, encoding, seed).fit(encoding.matrix(train_rows + test_rows),
+                                                        np.concatenate([train_y, test_y]))'''
+tests = [
+    'tests/unit/test_predictions.py::TestLearning::test_noise_is_not_mistaken_for_a_pattern',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0628'
+describes = 'PREDICT: skill is measured against the naive guess'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/predictions.py'
+old = '    naive = _naive(prediction, train_y, len(test_y))'
+new = '    naive = test_y'
+tests = [
+    'tests/unit/test_predictions.py::TestLearning::test_a_real_pattern_is_learned_and_beats_the_naive_guess',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0629'
+describes = 'PREDICT: a group too small to judge shows no score'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/predictions.py'
+old = '        if len(indexes) < MIN_GROUP:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_predictions.py::TestLearning::test_a_group_too_small_to_judge_shows_no_score',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0630'
+describes = 'PREDICT: a score too good to be true is said'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/predictions.py'
+old = '    if skill >= SUSPICIOUS_SKILL:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_predictions.py::TestLearning::test_an_input_carrying_the_answer_is_said_to_be_too_good_to_be_true',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0631'
+describes = 'PREDICT: blank text is a value of its own'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/predictions.py'
+old = '                    code = codes.get(EMPTY)'
+new = '                    code = None'
+tests = [
+    'tests/unit/test_predictions.py::TestLearning::test_an_input_carrying_the_answer_is_said_to_be_too_good_to_be_true',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0632'
+describes = 'PREDICT: a known answer is never overwritten by a guess'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/predictions.py'
+old = '                   if _answer(self.prediction, row.get(self.prediction.target)) is None]'
+new = '                   if True]'
+tests = [
+    'tests/unit/test_predictions.py::TestPredicting::test_only_records_without_a_known_answer_are_predicted',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0635'
+describes = 'PREDICT: no better than the naive guess is never approved'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/predictions.py'
+old = '    if not isinstance(skill, (int, float)) or skill <= 0:'
+new = '    if not isinstance(skill, (int, float)):'
+tests = [
+    'tests/unit/test_prediction_proposals.py::TestWhatMayBeApproved::test_no_better_than_guessing_may_not_be',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0636'
+describes = 'PREDICT: an approval always sees the score by group'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/predictions.py'
+old = '    if not evaluation.get("groups"):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_prediction_proposals.py::TestWhatMayBeApproved::test_without_a_breakdown_by_group_it_may_not_be',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0647'
+describes = 'PREDICT: a retrained model must still earn its approval'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/predictions.py'
+old = '    return skill > 0 and skill >= approved_skill - RETRAIN_TOLERANCE'
+new = '    return skill > 0'
+tests = [
+    'tests/unit/test_predictions.py::TestRetraining::test_a_retrained_model_must_still_earn_its_approval',
+    'tests/unit/test_predictions.py::TestFillingGold::test_measuring_worse_than_approved_fills_nothing',
+    'tests/integration/test_predicted_fields.py::TestFilling::test_a_model_that_measures_worse_than_approved_fills_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0648'
+describes = 'PREDICT: a retrained model no better than guessing fills nothing'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/predictions.py'
+old = '    return skill > 0 and skill >= approved_skill - RETRAIN_TOLERANCE'
+new = '    return skill >= approved_skill - RETRAIN_TOLERANCE'
+tests = [
+    'tests/unit/test_predictions.py::TestRetraining::test_a_retrained_model_must_still_earn_its_approval',
+]
+expect = "fails"

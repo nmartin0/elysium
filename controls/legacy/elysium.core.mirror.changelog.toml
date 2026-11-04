@@ -1,0 +1,138 @@
+[[control]]
+id = 'LEG-0130'
+describes = 'R10: an update carries its before-image'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '''
+            if before_images:
+                rows.append({**was, "_change": UPDATE_BEFORE})'''
+new = '''
+            if False:
+                rows.append({**was, "_change": UPDATE_BEFORE})'''
+tests = [
+    'tests/unit/test_changelog.py::TestBeforeImages::test_an_update_carries_where_the_row_came_from',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0132'
+describes = 'R10: an unseen start is unknown, not invented'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '                version = {**values, "_valid_from": None, "_valid_to": at, "_current": False}'
+new = '                version = {**values, "_valid_from": at, "_valid_to": at, "_current": False}'
+tests = [
+    'tests/unit/test_changelog.py::TestTheChangelogAsSCD2::test_a_row_older_than_the_changelog_has_an_unknown_start',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0281'
+describes = 'R5: the Arrow diff treats a null beside a value as a change'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '            equal = pc.fill_null(pc.equal(x, y), False)'
+new = '            equal = pc.fill_null(pc.equal(x, y), True)'
+tests = [
+    'tests/unit/test_changelog_diff_in_arrow.py::test_randomised_snapshots_give_the_same_changes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0282'
+describes = 'R5: the Arrow diff treats a changed set of columns as an update'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '    same_columns = set(previous.column_names) == set(current.column_names)'
+new = '    same_columns = True'
+tests = [
+    'tests/unit/test_changelog_diff_in_arrow.py::test_randomised_snapshots_give_the_same_changes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0283'
+describes = 'R5: the changelog is diffed in Arrow, not as whole-table dicts'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '        return dict(zip(indices, (_as_strings(row) for row in table.take(pa.array(indices)).to_pylist()),'
+new = '        return dict(zip(indices, (_as_strings(row) for row in table.take(pa.array(indices[:1])).to_pylist()),'
+tests = [
+    'tests/unit/test_changelog_diff_in_arrow.py::test_randomised_snapshots_give_the_same_changes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0314'
+describes = 'DEP-2: hypothesis finds the two changelog diffs disagreeing'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '            equal = pc.fill_null(pc.equal(x, y), False)'
+new = '            equal = pc.fill_null(pc.equal(x, y), True)'
+tests = [
+    'tests/unit/test_properties.py::test_the_arrow_diff_is_the_dict_diff',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0344'
+describes = 'R46: an as-of read returns the version valid at that time'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '            if (start is None or start <= when) and (end is None or when < end):'
+new = '            if end is None:'
+tests = [
+    'tests/unit/test_as_of_joins.py::TestAVersionAtATime::test_before_and_after_a_change',
+    'tests/unit/test_as_of_joins.py::test_the_history_script_answers_as_of_a_time',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0345'
+describes = 'R46: an object inserted later did not exist then'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '''
+        if not known:
+            return self._current.get(str(object_id))'''
+new = '''
+        if True:
+            return self._current.get(str(object_id))'''
+tests = [
+    'tests/unit/test_as_of_joins.py::TestAVersionAtATime::test_an_object_inserted_later_did_not_exist_then',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0346'
+describes = 'R46: the boundary of a change belongs to the new version'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '(end is None or when < end):'
+new = '(end is None or when <= end):'
+tests = [
+    'tests/unit/test_as_of_joins.py::TestAVersionAtATime::test_the_boundary_belongs_to_the_new_version',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0349'
+describes = 'Review: an old row deleted later existed before its deletion'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/changelog.py'
+old = '        if change == DELETE and key not in open_versions:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_as_of_joins.py::test_an_old_row_deleted_later_existed_before_its_deletion',
+]
+expect = "fails"

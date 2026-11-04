@@ -1,0 +1,51 @@
+[[control]]
+id = 'LEG-0956'
+describes = 'a leftover rebase directory is named before applying'
+invariant = 'none'
+kind = 'semantic'
+path = 'scripts/apply_patch.sh'
+old = 'for leftover in rebase-apply rebase-merge'
+new = 'for leftover in nothing'
+tests = [
+    'tests/unit/test_patch_scripts.py::test_apply_patch_names_the_leftover_rebase_directory',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0957'
+describes = 'a push that did not land is not reported as success'
+invariant = 'none'
+kind = 'semantic'
+path = 'scripts/apply_patch.sh'
+old = "[[ \"$behind_ahead\" == $'0\\t0' ]] ||"
+new = 'true ||'
+tests = [
+    'tests/unit/test_patch_scripts.py::test_apply_patch_does_not_call_a_push_that_did_not_land_a_success',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0961'
+describes = 'unrelated local commits are not published with a patch'
+invariant = 'none'
+kind = 'semantic'
+path = 'scripts/apply_patch.sh'
+old = '[[ "$(git rev-list --count "$REMOTE/$BRANCH"..HEAD)" == 0 ]]'
+new = 'true'
+tests = [
+    'tests/unit/test_patch_scripts.py::test_apply_patch_refuses_to_publish_unrelated_local_commits',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0966'
+describes = 'a branch never pushed is created by its first push'
+invariant = 'none'
+kind = 'semantic'
+path = 'scripts/apply_patch.sh'
+old = 'if git ls-remote --exit-code --heads "$REMOTE" "$BRANCH" >/dev/null 2>&1; then'
+new = 'if true; then'
+tests = [
+    'tests/unit/test_patch_scripts.py::test_apply_patch_creates_a_branch_that_has_never_been_pushed',
+]
+expect = "fails"

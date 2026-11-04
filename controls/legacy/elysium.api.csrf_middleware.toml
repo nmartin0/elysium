@@ -1,0 +1,13 @@
+[[control]]
+id = 'LEG-0061'
+describes = 'the CSRF token is compared, not assumed'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/csrf_middleware.py'
+old = 'secrets.compare_digest('
+new = '(lambda _a, _b: True)('
+tests = [
+    'tests/integration/test_csrf_constant_time.py::TestPinnedAtSource::test_the_token_is_compared_with_compare_digest',
+    'tests/integration/test_csrf_constant_time.py::TestTheBehaviourAroundIt::test_a_different_token_is_refused',
+]
+expect = "fails"

@@ -1,0 +1,18 @@
+[[control]]
+id = 'LEG-1153'
+describes = "v2 api: an aggregate's mediator refusal is a fixed sentence, not the mediator's words"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/object_sets.py'
+old = '''
+        except ValueError:
+            raise invalid_argument(UNEVALUABLE_SENTENCE) from None
+'''
+new = '''
+        except ValueError as error:
+            raise invalid_argument(str(error)) from None
+'''
+tests = [
+    'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_mediator_refusal_nobody_foresaw_is_a_fixed_400_never_its_words',
+]
+expect = "fails"

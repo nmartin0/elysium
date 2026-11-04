@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0362'
+describes = 'PA001-G12: a decimal is padded to its declared places'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/decimal_text.py'
+old = '        if wanted is not None and isinstance(exponent, int) and exponent > wanted:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_decimals_leave_the_api_exactly.py::TestTheText::test_padded_to_the_declared_scale_in_plain_notation',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0363'
+describes = 'PA001-G12: a 38-digit decimal is not rounded by the default context'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/decimal_text.py'
+old = '''
+    exact = value.normalize(_EXACT)
+'''
+new = '''
+    exact = value.normalize()
+'''
+tests = [
+    'tests/unit/test_decimals_leave_the_api_exactly.py::TestTheText::test_a_38_digit_value_survives',
+]
+expect = "fails"

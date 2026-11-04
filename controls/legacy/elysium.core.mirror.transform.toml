@@ -1,0 +1,51 @@
+[[control]]
+id = 'LEG-0279'
+describes = 'R5: merged batches number their bad rows as one table'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/transform.py'
+old = '        mismatched.extend(offset + index for index in result.mismatched_row_indices)'
+new = '        mismatched.extend(index for index in result.mismatched_row_indices)'
+tests = [
+    'tests/unit/test_sync_reads_in_batches.py::TestTransformBatchesIsTransformRows::test_the_merged_result_is_the_unbatched_one',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0280'
+describes = "R5: merged batches report each column's FIRST bad value"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/transform.py'
+old = '            drift.setdefault(item.column, item)'
+new = '            drift[item.column] = item'
+tests = [
+    'tests/unit/test_sync_reads_in_batches.py::TestTransformBatchesIsTransformRows::test_the_merged_result_is_the_unbatched_one',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0348'
+describes = 'Review: the cleaning record is bounded'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/transform.py'
+old = '                    if len(cleaned_cells) < MAX_CLEANED_CELLS:'
+new = '                    if True:'
+tests = [
+    'tests/unit/test_cleaning_is_recorded_per_cell.py::test_one_batch_is_bounded_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0389'
+describes = 'ZOO-14: an integer read with leading zeros dropped is counted for a warning'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/transform.py'
+old = '                if declared == "integer" and _has_leading_zeros(value):'
+new = '                if False:'
+tests = [
+    'tests/unit/test_leading_zeros_are_warned.py::test_a_real_sync_warns',
+]
+expect = "fails"

@@ -1,0 +1,157 @@
+[[control]]
+id = 'LEG-0116'
+describes = 'R66: gold honours an accepted deletion'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold.py'
+old = '        previous_count = None if accept_deletions else len(published_now)'
+new = '        previous_count = len(published_now)'
+tests = [
+    'tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestAChangeTheMirrorRefuses::test_AND_GOLD_TOO_SO_THE_READER_SEES_IT',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0299'
+describes = "R37: gold's dict path computes it too"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold.py'
+old = '    return with_derived(pa.Table.from_pylist('
+new = '    return (lambda table, _type_def: table)(pa.Table.from_pylist('
+tests = [
+    'tests/unit/test_derived_fields.py::test_gold_s_dict_path_computes_it_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0365'
+describes = 'PA001-G11: gold built from the same inputs is not published again'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/gold.py'
+old = '    if inputs is not None and _published_from(catalog, object_type) == inputs:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_unchanged_gold_is_not_republished.py::TestNothingChanged::test_a_second_build_publishes_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0366'
+describes = 'PA001-G11: every publication restamps its inputs, not only the first'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold.py'
+old = '''
+    _publish(table, audited)
+    _record_run(catalog, identifier, run_id)
+    _record_inputs(catalog, identifier, inputs)
+'''
+new = '''
+    _publish(table, audited)
+    _record_run(catalog, identifier, run_id)
+'''
+tests = [
+    'tests/unit/test_unchanged_gold_is_not_republished.py::TestSomethingChanged::test_after_a_change_it_settles_again',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0367'
+describes = 'PA001-G11: an unpublished current snapshot is never skipped'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold.py'
+old = '''
+    if current is None or _latest_published_snapshot(table) != current.snapshot_id:
+        return None'''
+new = '''
+    if current is None:
+        return None'''
+tests = [
+    'tests/unit/test_unchanged_gold_is_not_republished.py::TestNeverSkipWrongly::test_a_current_snapshot_that_was_never_published_is_not_skipped',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0369'
+describes = 'PA001-G11: published_at moves when a build confirms gold current'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/gold.py'
+old = '                    made = max(made, datetime.fromisoformat(confirmed))'
+new = '                    pass'
+tests = [
+    'tests/unit/test_unchanged_gold_is_not_republished.py::TestNothingChanged::test_published_at_still_moves',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0376'
+describes = 'PA001-G4: readers pin the newest published tag, not an unaudited current snapshot'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold.py'
+old = '''
+    if not numbered:
+        return None
+    return max(numbered)[1]
+'''
+new = '''
+    if not numbered:
+        current = table.current_snapshot()
+        return current.snapshot_id if current else None
+    return max(numbered)[1]
+'''
+tests = [
+    'tests/unit/test_readers_pin_a_publication.py::TestACrashBeforeThePublication::test_nothing_is_pinned',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0649'
+describes = 'PREDICT: a type with an approved prediction is never streamed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/gold.py'
+old = '    if isinstance(silver_rows, pa.RecordBatchReader) and type_def.get(COMPARTMENTS) is not None:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_gold_streaming.py::test_a_type_with_an_approved_prediction_is_never_streamed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1034'
+describes = 'a gold table is rebuilt when a field leaves its type (what the dialog says about gold)'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/gold.py'
+old = '''
+    if set(published) != set(arrow_schema.names):
+        return True'''
+new = '''
+    if False:
+        return True'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhatHappensToStoredData::test_gold_is_rebuilt_without_the_column_and_its_publication_tags_restart',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1087'
+describes = "retype: gold is rebuilt when a column's type changes (publication tags restart)"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/gold.py'
+old = '''
+        not _same(existing[field.name], field.type)
+        for field in arrow_schema'''
+new = '''
+        False
+        for field in arrow_schema'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_gold_is_rebuilt_and_its_publication_tags_restart',
+]
+expect = "fails"

@@ -58,3 +58,19 @@ def test_every_built_in_step_can_fail_the_script():
     assert script.count("set -uo pipefail") == 1
     assert "|| true" in script  # only the report-only diffsize step
     assert script.count("|| true") == 1
+
+
+def test_an_area_runs_only_that_areas_controls(tmp_path):
+    result = subprocess.run(
+        ["bash", str(ROOT / "check.sh"), "--area", "nonesuch"],
+        capture_output=True, text=True, check=False)
+
+    assert result.returncode == 1
+    assert "controls:nonesuch | 1 |" in result.stdout
+    assert "ruff" not in result.stdout
+
+
+def test_area_needs_a_name():
+    result = subprocess.run(["bash", str(ROOT / "check.sh"), "--area"], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 2

@@ -1,0 +1,55 @@
+[[control]]
+id = 'LEG-0512'
+describes = 'HOURS: hours on a date field are refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/filters.py'
+old = '    if "hours" in units and declared_type == "date":'
+new = '    if False:'
+tests = [
+    'tests/unit/test_relative_hours.py::TestValidation::test_hours_on_a_date_are_refused_by_name',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0513'
+describes = 'HOURS: days and hours together are refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/filters.py'
+old = '    if len(units) > 1:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_relative_hours.py::TestValidation::test_days_and_hours_together_are_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0514'
+describes = 'HOURS: a relative date resolves in the unit it counts'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/filters.py'
+old = 'RELATIVE_UNITS = {"days": timedelta(days=1), "hours": timedelta(hours=1)}'
+new = 'RELATIVE_UNITS = {"days": timedelta(days=1), "hours": timedelta(days=1)}'
+tests = [
+    'tests/integration/test_relative_dates_answer.py::test_in_the_last_n_hours',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0553'
+describes = 'FILTERS: a relative date is made absolute before storage sees it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/filters.py'
+old = '''
+    if condition.operator != "relative_date":
+        return condition'''
+new = '''
+    if True:
+        return condition'''
+tests = [
+    'tests/integration/test_relative_dates_answer.py::test_in_the_last_n_days',
+]
+expect = "fails"

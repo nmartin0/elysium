@@ -1,0 +1,43 @@
+[[control]]
+id = 'LEG-0230'
+describes = 'a declared standardisation resolves on the frozen schema'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/standardise.py'
+old = '    if not isinstance(declared, Mapping):'
+new = '    if not isinstance(declared, dict):'
+tests = [
+    'tests/unit/test_declared_rules_survive_the_frozen_schema.py::test_a_declared_standardisation_resolves_on_a_frozen_schema',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0310'
+describes = 'DEP-4: mojibake is repaired when declared'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/standardise.py'
+old = '        step("fix_text", fixed_text(value))'
+new = '        pass'
+tests = [
+    'tests/unit/test_reference_data_checks.py::TestStandardisation::test_mojibake_is_repaired_before_anything_else',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0339'
+describes = 'R33: the record names the rule that changed the cell'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/standardise.py'
+old = '''
+        if after != value:
+            applied.append(name)'''
+new = '''
+        if after != value:
+            applied.append("cleaned")'''
+tests = [
+    'tests/unit/test_cleaning_is_recorded_per_cell.py::test_each_changed_cell_is_recorded_with_its_rules',
+    'tests/unit/test_cleaning_is_recorded_per_cell.py::test_it_is_replayable_from_bronze_and_the_rules',
+]
+expect = "fails"

@@ -1,0 +1,50 @@
+[[control]]
+id = 'LEG-1138'
+describes = 'an unknown configuration key is refused, not ignored'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_schema.py'
+old = '''
+    model_config = ConfigDict(extra="forbid")
+'''
+new = '''
+    model_config = ConfigDict(extra="ignore")
+'''
+tests = [
+    'tests/unit/test_config_schema.py::test_a_misspelt_key_is_named_with_its_file_path_and_nearest_key',
+    'tests/unit/test_config_schema.py::test_the_loader_refuses_a_misspelt_setting',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1141'
+describes = "a user's misspelt attribute is refused"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_schema.py'
+old = '''
+    if filename == "policy.yaml":
+        found += _unknown_user_keys(data, security_attribute)
+'''
+new = ''
+tests = [
+    'tests/unit/test_config_schema.py::test_the_loader_refuses_a_misspelt_user_and_silo_key',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1142'
+describes = 'the refusal names the nearest valid key'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_schema.py'
+old = '''
+    near = difflib.get_close_matches(key, valid, n=1, cutoff=0.6)
+'''
+new = '''
+    near: list[str] = []
+'''
+tests = [
+    'tests/unit/test_config_schema.py::test_a_misspelt_key_is_named_with_its_file_path_and_nearest_key',
+]
+expect = "fails"

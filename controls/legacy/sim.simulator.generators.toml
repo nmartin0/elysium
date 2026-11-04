@@ -1,0 +1,33 @@
+[[control]]
+id = 'LEG-0006'
+describes = 'prose keeps its sentences in the order they were declared'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/generators.py'
+old = '''
+        chosen = sorted(sample_without_replacement(
+            context.rng, range(len(self.sentences)), count))'''
+new = '''
+        chosen = sample_without_replacement(
+            context.rng, range(len(self.sentences)), count)'''
+tests = [
+    'sim/tests/test_generators.py::test_prose_reads_in_the_order_it_was_declared',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0007'
+describes = "a rule's first matching clause wins"
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/generators.py'
+old = '''
+        for condition, generator in self.clauses:
+            if _is_true(evaluate(condition, context)):'''
+new = '''
+        for condition, generator in reversed(self.clauses):
+            if _is_true(evaluate(condition, context)):'''
+tests = [
+    'sim/tests/test_generators.py::test_the_first_matching_clause_wins',
+]
+expect = "fails"

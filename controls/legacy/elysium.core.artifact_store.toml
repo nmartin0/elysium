@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0398'
+describes = 'R13: a restore does not bring back a note about someone erased'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/core/artifact_store.py'
+old = '                if key_hash(object_type, object_id) in hashes_by_type.get(object_type, ()):'
+new = '                if False:'
+tests = [
+    'tests/unit/test_erasure.py::TestWhatPeopleWroteAboutThem::test_a_restore_does_not_bring_them_back',
+]
+expect = "fails"

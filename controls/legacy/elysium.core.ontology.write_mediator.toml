@@ -1,0 +1,239 @@
+[[control]]
+id = 'LEG-0062'
+describes = 'a write is refused without the execute grant'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '        if not rbac_allowed:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_write_mediator.py::test_propose_action_denied_for_ungranted_action_even_with_a_different_action_granted',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0268'
+describes = 'R29: a write breaking a rule between two fields is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '            problems.extend(self._rule_violations(sub_write, declared))'
+new = '            pass'
+tests = [
+    'tests/unit/test_rules_between_two_fields.py::TestOnAWrite::test_a_change_that_breaks_it_against_the_current_value_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0269'
+describes = "R29: an update is judged with the untouched side's current value"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '            if untouched and sub_write.operation == "update":'
+new = '            if False:'
+tests = [
+    'tests/unit/test_rules_between_two_fields.py::TestOnAWrite::test_a_change_that_breaks_it_against_the_current_value_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0301'
+describes = 'R37: a derived field cannot be written'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '''
+        if derived:
+            # COMPUTED, NOT STORED (R37, R41).'''
+new = '''
+        if False:
+            # COMPUTED, NOT STORED (R37, R41).'''
+tests = [
+    'tests/unit/test_derived_fields.py::TestThroughARealDeployment::test_it_cannot_be_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0354'
+describes = 'NEW-3: a proposer whose account is gone cannot have their write applied'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '''
+            if proposer_now is None:
+                self.audit_log.log_access('''
+new = '''
+            if False:
+                self.audit_log.log_access('''
+tests = [
+    'tests/unit/test_proposer_is_reread_at_confirm.py::TestTheProposerIsWhoTheyAreNow::test_a_proposer_whose_account_is_gone_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0355'
+describes = 'NEW-3: the checks use the proposer as they are now, not the snapshot'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '''
+            proposer = proposer_now
+'''
+new = '''
+            pass
+'''
+tests = [
+    'tests/unit/test_proposer_is_reread_at_confirm.py::TestTheProposerIsWhoTheyAreNow::test_a_proposer_moved_to_another_compartment_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0356'
+describes = 'NEW-3: a role reassigned without a reload is still rechecked'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '                and proposer.role_name == getattr(pending.proposer, "role_name", None)):'
+new = '                and True):'
+tests = [
+    'tests/unit/test_proposer_is_reread_at_confirm.py::TestTheProposerIsWhoTheyAreNow::test_a_proposer_moved_to_a_role_without_the_grant_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0359'
+describes = 'SEC-28: a create counts as a write into the compartment it sets'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '''
+        return sub_write.changes.get(field_name) if field_name else None
+'''
+new = '''
+        return None
+'''
+tests = [
+    'tests/unit/test_cross_compartment_write.py::TestACreateIsAWriteToo::test_reading_one_compartment_and_creating_in_another_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0380'
+describes = "--workers: startup resume waits for every process's in-flight write"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '''
+        with _applying(self.write_log.db_path, exclusive=True):
+'''
+new = '''
+        if True:
+'''
+tests = [
+    'tests/unit/test_resume_waits_for_live_writers.py::TestTwoRealWorkers::test_a_live_writers_batch_is_left_to_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0381'
+describes = "--workers: an apply is visible to other processes' resume"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '''
+        with _applying(self.write_log.db_path, exclusive=False):
+'''
+new = '''
+        if True:
+'''
+tests = [
+    'tests/unit/test_resume_waits_for_live_writers.py::TestTwoRealWorkers::test_a_live_writers_batch_is_left_to_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0405'
+describes = "BULK-1: a proposal naming more than the deployment's limit is refused"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '            if len(object_ids) > self.bulk_limit:'
+new = '            if len(object_ids) > MAX_BULK_OBJECTS:'
+tests = [
+    'tests/integration/test_bulk_actions.py::test_one_beyond_the_ceiling_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0494'
+describes = "TRIGGERS: an action may let an automation's owner approve its proposal"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '        if pending.origin == "automation" and action_def.get("owner_may_approve_automation") is True:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_write_mediator.py::test_an_action_may_let_the_owner_approve_their_automations_proposal',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0495'
+describes = "TRIGGERS: the owner setting covers automations, not the owner's own proposals"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '        if pending.origin == "automation" and action_def.get("owner_may_approve_automation") is True:'
+new = '        if action_def.get("owner_may_approve_automation") is True:'
+tests = [
+    'tests/unit/test_write_mediator.py::test_the_setting_is_about_automations_not_the_owners_own_proposals',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0738'
+describes = 'UNRESTRICTED: its values may be written anywhere'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '''
+        if read_label is UNRESTRICTED:
+            continue'''
+new = '''
+        if False:
+            continue'''
+tests = [
+    'tests/unit/test_unrestricted_types.py::TestWritingIsNotAWayOut::test_its_values_may_go_anywhere',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0739'
+describes = 'UNRESTRICTED: a new record of it is labelled, so writing restricted values into it is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '''
+        if is_unrestricted(declared):
+            return UNRESTRICTED'''
+new = '''
+        if False:
+            return UNRESTRICTED'''
+tests = [
+    'tests/unit/test_unrestricted_types.py::TestWritingIsNotAWayOut::test_a_new_record_of_it_is_labelled',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0740'
+describes = "UNRESTRICTED: writing to it is within everyone's reach"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/write_mediator.py'
+old = '            if current is None or current is UNRESTRICTED or current == proposer.security_value:'
+new = '            if current is None or current == proposer.security_value:'
+tests = [
+    'tests/unit/test_unrestricted_types.py::TestWritingIsNotAWayOut::test_writing_to_it_is_within_everyones_reach',
+]
+expect = "fails"

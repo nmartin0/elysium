@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0737'
+describes = 'UNRESTRICTED: a person with no compartment still sees it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/access/access_control.py'
+old = '    unrestricted = bool(has_no_row_check and has_no_row_check(object_type))'
+new = '    unrestricted = False'
+tests = [
+    'tests/unit/test_unrestricted_types.py::TestReading::test_even_someone_with_no_compartment_at_all',
+]
+expect = "fails"

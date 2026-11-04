@@ -1,0 +1,195 @@
+[[control]]
+id = 'LEG-0216'
+describes = 'R3 count: the dialog leaves out where the count is from and as of when'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/retype.py'
+old = '_COUNTED = ("Counted in bronze, as of {when} (its last snapshot: a value changed at the source since is not in "'
+new = '_COUNTED = ("Counted, as of {when} (a value changed at the source since is not in "'
+tests = [
+    'tests/unit/test_retype_count.py::TestWhatTheDialogSays::test_a_count_is_said_with_where_it_is_from_and_as_of_when',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1053'
+describes = 'retype: a column the source lost is not compared, as the sync does not'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/retype.py'
+old = '        columns = [column for column in target.columns if present is None or column in present]'
+new = '        columns = list(target.columns)'
+tests = [
+    'tests/unit/test_retype.py::TestWhichSilverTablesNeedARebuild::test_a_column_the_source_no_longer_has_is_not_compared_as_the_sync_does_not',
+    'tests/integration/test_retype_from_the_ui.py::TestTheRebuildListIsTheSyncsOwn::test_a_column_the_source_no_longer_has_makes_no_rebuild_owed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1054'
+describes = 'retype: the dialog says what quarantine does when that is the setting'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/retype.py'
+old = '    said.append((_QUARANTINE if on_type_mismatch == "quarantine" else _REFUSE).format(new=new_type))'
+new = '    said.append(_REFUSE.format(new=new_type))'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatTheDialogSaysForEachMode::test_quarantine_sets_rows_aside_at_each_sync',
+    'tests/unit/test_retype.py::TestWhatItSaysAboutStoredData::test_under_quarantine_such_rows_are_set_aside_at_each_sync',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1055'
+describes = 'retype: the dialog says what refuse does when that is the setting'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/retype.py'
+old = '    said.append((_QUARANTINE if on_type_mismatch == "quarantine" else _REFUSE).format(new=new_type))'
+new = '    said.append(_QUARANTINE.format(new=new_type))'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhatTheDialogSaysForEachMode::test_refuse_stops_the_sync_and_the_rebuild_until_the_data_or_the_type_is_fixed',
+    'tests/unit/test_retype.py::TestWhatItSaysAboutStoredData::test_under_refuse_a_value_that_cannot_convert_stops_the_sync_until_the_data_or_the_type_is_fixed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1056'
+describes = 'retype: a shared table says that gold of every type on it is skipped and rebuilt'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/retype.py'
+old = '    if len(types) > 1:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_retype.py::TestWhatItSaysAboutStoredData::test_a_shared_table_names_every_type_whose_gold_is_skipped_and_rebuilt',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1057'
+describes = 'retype: tables not owed a rebuild are not described as rebuilt'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/retype.py'
+old = '        mine = [name for name in tables if name in owed]'
+new = '        mine = list(tables)'
+tests = [
+    'tests/unit/test_retype.py::TestWhatItSaysAboutStoredData::test_a_table_not_built_or_already_matching_is_said_not_to_be_rebuilt_and_nothing_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1062'
+describes = "retype: the field the loaded schema's row rule reads is refused (security: inherit is only a word in the file)"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/retype.py'
+old = '    if isinstance(security, Mapping) and security.get("field") == field:'
+new = '    if False:'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_field_whose_row_rule_is_inherited_from_its_silo_is_refused',
+    'tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_the_security_field_of_the_loaded_schema_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1063'
+describes = "retype: a column that is another type's security column on a shared table is refused"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/retype.py'
+old = '        if target.security_column == column:'
+new = '        if False:'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_second_types_copy_of_the_security_column_on_a_shared_table_is_refused',
+    'tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_column_the_targets_use_for_security_is_refused_under_any_field_name',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1064'
+describes = 'retype: a column the identifier is stored in is refused under any field name'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/retype.py'
+old = '        if target.id_column == column:'
+new = '        if False:'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_field_stored_in_the_identifier_column_under_another_name_is_refused',
+    'tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_column_the_targets_use_for_the_id_is_refused_under_any_field_name',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1065'
+describes = 'retype: a column a link joins on is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/retype.py'
+old = '    if linked:'
+new = '    if False:'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_field_stored_in_a_links_key_column_is_refused',
+    'tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_link_key_column_is_refused',
+    'tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_reverse_links_key_in_the_other_table_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1066'
+describes = 'retype: a computed field is refused by its rule, from the loaded schema'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/retype.py'
+old = '    if is_computed(field_config):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_computed_field_is_refused_by_its_rule',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1079'
+describes = 'retype: silver is judged against the lake, not remembered'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/retype.py'
+old = '        if changed_column_types(have, schema_for_columns(columns, target.column_types)):'
+new = '        if True:'
+tests = [
+    'tests/unit/test_retype.py::TestWhichSilverTablesNeedARebuild::test_a_table_that_matches_is_not_listed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1080'
+describes = 'retype: a table never built has nothing to rebuild'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/retype.py'
+old = '''
+        if have is None:
+            continue'''
+new = '''
+        if have is None:
+            needing.append(identifier)
+            continue'''
+tests = [
+    'tests/unit/test_retype.py::TestWhichSilverTablesNeedARebuild::test_a_table_never_built_has_nothing_to_rebuild',
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_where_silver_was_never_built_there_is_nothing_to_rebuild',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1081'
+describes = 'retype: only tables whose declared types changed are touched by a retype'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/retype.py'
+old = 'if name in was and was[name] != types)'
+new = 'if name in was)'
+tests = [
+    'tests/unit/test_retype.py::TestWhichTablesARetypeTouches::test_nothing_when_nothing_differs',
+]
+expect = "fails"

@@ -1,0 +1,33 @@
+[[control]]
+id = 'LEG-0123'
+describes = 'R67a: a fill from a less-preferred source is recorded'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/survivorship.py'
+old = '''
+                    if passed_over is not None:
+                        fused.conflicts.append('''
+new = '''
+                    if False:
+                        fused.conflicts.append('''
+tests = [
+    'tests/unit/test_survivorship.py::TestChoosingAValue::test_a_fill_from_a_less_preferred_source_is_recorded',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0244'
+describes = 'R38: survivorship records which source won each field'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/survivorship.py'
+old = '''
+            if chosen_source is not None:
+                field_sources[field_name] = chosen_source'''
+new = '''
+            if False:
+                field_sources[field_name] = chosen_source'''
+tests = [
+    'tests/unit/test_which_source_supplied_each_value.py::TestThroughARealBuild::test_every_value_names_the_source_that_supplied_it',
+]
+expect = "fails"

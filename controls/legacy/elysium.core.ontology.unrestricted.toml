@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0733'
+describes = 'UNRESTRICTED: the declaration becomes its block at load'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/unrestricted.py'
+old = '            type_def["security"] = {DECLARED: True}'
+new = '            pass'
+tests = [
+    'tests/unit/test_unrestricted_types.py::TestDeclaringIt::test_it_validates',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0741'
+describes = 'UNRESTRICTED: review stores record it as shared'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/unrestricted.py'
+old = '    return None if value is UNRESTRICTED else value'
+new = '    return value'
+tests = [
+    'tests/unit/test_unrestricted_types.py::test_review_stores_record_it_as_shared',
+]
+expect = "fails"

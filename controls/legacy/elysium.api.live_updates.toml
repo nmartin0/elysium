@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0257'
+describes = 'Live: a hint reaches only a caller who may know the type exists'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/live_updates.py'
+old = '            for allowed in hints_for(visible_schema, [object_type]):'
+new = '            for allowed in [object_type]:'
+tests = [
+    'tests/integration/test_live_updates.py::test_a_type_the_caller_may_not_know_exists_is_never_mentioned',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0509'
+describes = "INBOX: the signal goes to its owner's streams only"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/live_updates.py'
+old = '        self._send(lambda owner: owner == user_id, (INBOX, None))'
+new = '        self._send(lambda owner: True, (INBOX, None))'
+tests = [
+    'tests/integration/test_inbox_signal.py::test_nobody_else_is',
+]
+expect = "fails"

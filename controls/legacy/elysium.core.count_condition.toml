@@ -1,0 +1,52 @@
+[[control]]
+id = 'LEG-0399'
+describes = 'R50: an automation does not propose an object it already has waiting'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/count_condition.py'
+old = '    if already_waiting:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_trigger_actions.py::TestItDoesNotProposeWhatIsAlreadyWaiting::test_a_second_crossing_while_the_first_waits_proposes_nothing',
+    'tests/unit/test_action_effect.py::TestWhatIsAlreadyWaitingIsLeftOut::test_when_everything_is_waiting_nothing_is_proposed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0537'
+describes = "COMBINED ACTIONS: proposed only when the owner's state fired"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/count_condition.py'
+old = '    if result.owner_fired and trigger.action_type and write_mediator is not None:'
+new = '    if trigger.action_type and write_mediator is not None:'
+tests = [
+    'tests/unit/test_combined_trigger_actions.py::TestWhenItProposes::test_not_on_the_baseline',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0538'
+describes = "COMBINED ACTIONS: on the chosen condition's objects"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/count_condition.py'
+old = '        chosen = next(view for view in views if view.view_id == action_view_id(trigger))'
+new = '        chosen = views[0]'
+tests = [
+    'tests/unit/test_combined_trigger_actions.py::TestWhenItProposes::test_on_the_chosen_conditions_objects',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0675'
+describes = 'PROJECTED: a projected trigger is evaluated as a projection'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/count_condition.py'
+old = '        if is_projected(trigger):'
+new = '        if False:'
+tests = [
+    'tests/integration/test_forecast_api.py::TestAProjectedTrigger::test_made_checked_at_once_and_listed',
+]
+expect = "fails"

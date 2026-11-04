@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0825'
+describes = "ADD-ON: a server that left cleanly exits 0, not aborted by the SDK's stdin watcher"
+invariant = 'none'
+kind = 'semantic'
+path = 'sdk/python/elysium_addon.py'
+old = '            while os.read(0, 4096):'
+new = "            while __import__('sys').stdin.buffer.read(4096):"
+tests = [
+    'tests/integration/test_addon_lifecycle.py::test_stopping_asks_politely_first',
+]
+expect = "fails"

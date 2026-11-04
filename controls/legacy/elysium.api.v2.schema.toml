@@ -1,0 +1,16 @@
+[[control]]
+id = 'LEG-1128'
+describes = 'v2 schema: the served schema passes through the filtered response model'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/schema.py'
+old = '''
+        name: VisibleObjectTypeResponse.model_validate(definition).model_dump()
+'''
+new = '''
+        name: definition
+'''
+tests = [
+    'tests/integration/test_api_v2.py::TestTheSchema::test_no_storage_or_security_internals_are_served',
+]
+expect = "fails"

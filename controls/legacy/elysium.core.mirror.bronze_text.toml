@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0323'
+describes = 'R3: a column that arrived as two types decodes as its text, never a guess'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/bronze_text.py'
+old = '    return next(iter(names)) if len(names) == 1 else MIXED'
+new = '    return sorted(names)[0]'
+tests = [
+    'tests/unit/test_bronze_round_trip.py::test_the_encodings_are_recorded_per_column',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0325'
+describes = 'R3: hypothesis finds a value bronze cannot give back'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/bronze_text.py'
+old = '        return -value if match.group(1) else value'
+new = '        return value'
+tests = [
+    'tests/unit/test_properties.py::test_bronze_text_decodes_to_the_value_it_was_given',
+]
+expect = "fails"

@@ -1,0 +1,153 @@
+[[control]]
+id = 'LEG-0528'
+describes = 'COMBINED: all means all'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_states.py'
+old = '        met = all(met_each) if trigger.combine == "all" else any(met_each)'
+new = '        met = any(met_each)'
+tests = [
+    'tests/integration/test_combined_triggers.py::TestAllOrAny::test_all_fires_when_the_last_part_becomes_true',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0529'
+describes = 'COMBINED: it fires once while it stays true'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_states.py'
+old = '        if not fired and stamp - since >= hold:'
+new = '        if stamp - since >= hold:'
+tests = [
+    'tests/integration/test_combined_triggers.py::TestAllOrAny::test_it_fires_once_while_it_stays_true',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0530'
+describes = 'COMBINED: true when made is a baseline, not a firing'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/trigger_states.py'
+old = '''
+                       State(met, stamp if met else None, met, digest))
+            if previous is None:'''
+new = '''
+                       State(met, stamp if met else None, False, digest))
+            if previous is None:'''
+tests = [
+    'tests/integration/test_combined_triggers.py::TestAllOrAny::test_already_true_when_made_does_not_fire_for_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0531'
+describes = 'COMBINED: a hold restarts when the condition stops being true'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_states.py'
+old = '''
+            states.put(trigger.trigger_id, user_id, State(False, None, False, digest))
+            continue'''
+new = '            continue'
+tests = [
+    'tests/integration/test_combined_triggers.py::TestHeldForAWhile::test_true_again_after_a_gap_holds_from_the_new_start',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0533'
+describes = 'COMBINED: a scheduled trigger tells nobody between its checks'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_states.py'
+old = '            if on_schedule is not None and met:'
+new = '            if met:'
+tests = [
+    'tests/integration/test_combined_triggers.py::TestOnASchedule::test_a_change_between_checks_tells_nobody',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0534'
+describes = 'COMBINED: one scheduled notice per occurrence per person'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_states.py'
+old = '                                     dedupe_key=f"{on_schedule}/{user_id}")'
+new = '                                     )'
+tests = [
+    'tests/integration/test_combined_triggers.py::TestOnASchedule::test_each_check_while_true_tells_once',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0539'
+describes = 'COMBINED ACTIONS: a scheduled check that finds it true proposes'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_states.py'
+old = '''
+                told += 1
+                owner_fired = owner_fired or user_id == owner.user_id
+            continue'''
+new = '''
+                told += 1
+            continue'''
+tests = [
+    'tests/unit/test_combined_trigger_actions.py::TestWhenItProposes::test_at_each_scheduled_check_while_true_but_not_again_for_what_waits',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0540'
+describes = "COMBINED ACTIONS: objects only from the trigger's own conditions"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/trigger_states.py'
+old = '    if action_view is not None and action_view not in {'
+new = '    if False and action_view not in {'
+tests = [
+    'tests/unit/test_combined_trigger_actions.py::TestWhatMayBeChosen::test_not_some_other_view_even_of_its_owner',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0546'
+describes = 'DECLARED: a schedule removed from config.yaml is cancelled'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/trigger_states.py'
+old = '        if key.startswith("declared/") and key not in wanted:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_declared_combined_triggers.py::TestItsScheduleIsSet::test_set_left_alone_moved_and_cancelled_with_config_yaml',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0547'
+describes = 'DECLARED: an unchanged schedule is not moved by a reload'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/trigger_states.py'
+old = '        if existing is None or existing.repeat != trigger.schedule:'
+new = '        if True:'
+tests = [
+    'tests/unit/test_declared_combined_triggers.py::TestItsScheduleIsSet::test_set_left_alone_moved_and_cancelled_with_config_yaml',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0548'
+describes = 'COMBINED: gaining and losing are not combined'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/trigger_states.py'
+old = '    if gained is not None or fell is not None:'
+new = '    if False:'
+tests = [
+    'tests/integration/test_combined_triggers.py::TestRefusedWithTheReason::test_refused',
+]
+expect = "fails"

@@ -1,0 +1,68 @@
+[[control]]
+id = 'LEG-0063'
+describes = 'gold refuses a publication that lost most of its rows'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/gold_arrow.py'
+old = '    if previous_count and table.num_rows < previous_count * (1 - MAX_DELETED_FRACTION):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_gold_streaming.py::TestTheThreeAuditsAgree::test_word_for_word[rows2-10]',
+    'tests/unit/test_gold_streaming.py::TestTheThreeAuditsAgree::test_word_for_word[rows6-100]',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0298'
+describes = 'R37: gold stores the computed value'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold_arrow.py'
+old = '    return with_derived(pa.Table.from_arrays(columns, names=names), type_def)'
+new = '    return pa.Table.from_arrays(columns, names=names)'
+tests = [
+    'tests/unit/test_derived_fields.py::TestThroughARealDeployment::test_gold_holds_it_so_a_filter_finds_by_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0588'
+describes = "EXTRACT: gold stores the value as the field's type"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold_arrow.py'
+old = '            values = [typed(value, enrichment.extract, locale) for value in values]'
+new = '            values = list(values)'
+tests = [
+    'tests/unit/test_enriched_fields.py::TestGold::test_an_extracted_amount_is_typed_by_the_sources_locale',
+    'tests/integration/test_enriched_fields_reach_gold.py::test_an_extracted_number_reaches_gold_typed_and_its_review_says_what_it_takes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0644'
+describes = "PREDICT: a model fills only its own compartment's records"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold_arrow.py'
+old = '                  if compartment == approval["compartment"]]'
+new = '                  if True]'
+tests = [
+    'tests/unit/test_predictions.py::TestFillingGold::test_only_an_approved_compartment_is_filled_and_only_where_unknown',
+    'tests/unit/test_predictions.py::TestFillingGold::test_a_compartment_learns_only_from_its_own_records',
+    'tests/integration/test_predicted_fields.py::TestFilling::test_another_compartment_stays_empty_until_its_own_approval',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0645'
+describes = "PREDICT: through a link, the linked record's compartment decides"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/gold_arrow.py'
+old = '        compartments = [None if row.get(link) is None else by_id.get(str(row[link]))'
+new = '        compartments = [None if row.get(link) is None else next(iter(by_id.values()))'
+tests = [
+    'tests/unit/test_predictions.py::TestFillingGold::test_through_a_link_the_linked_records_compartment_decides',
+]
+expect = "fails"

@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0724'
+describes = 'ANSWER: a limit that guards nothing is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/llm/agent_features.py'
+old = '                              or not MIN_ANSWER_TOKENS <= limit <= MAX_ANSWER_TOKENS):'
+new = '                              or False):'
+tests = [
+    'tests/unit/test_shorter_answers.py::TestTheSettings::test_a_limit_that_guards_nothing_is_refused',
+]
+expect = "fails"

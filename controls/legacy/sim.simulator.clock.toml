@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0054'
+describes = 'the hygiene check catches a shouted comment'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/clock.py'
+old = '#: One real second becomes one simulated minute.'
+new = '#: ONE REAL SECOND BECOMES one simulated minute.'
+tests = [
+    'sim/tests/test_suite_hygiene.py::test_comments_are_not_shouted',
+]
+expect = "fails"

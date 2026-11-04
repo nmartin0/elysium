@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0646'
+describes = 'PREDICT: the carried security value decides first, as reads do'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/prediction_fill.py'
+old = '    return carried if carried is not None else row.get(security_field)'
+new = '    return row.get(security_field)'
+tests = [
+    'tests/unit/test_predictions.py::TestFillingGold::test_only_an_approved_compartment_is_filled_and_only_where_unknown',
+]
+expect = "fails"

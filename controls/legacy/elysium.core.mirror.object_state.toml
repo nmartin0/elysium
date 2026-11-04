@@ -1,0 +1,107 @@
+[[control]]
+id = 'LEG-0197'
+describes = 'R2 state: a recorded rebuild reads as rebuilding without the sync lock'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/object_state.py'
+old = '        return REBUILDING if sync_running else LIVE'
+new = '        return REBUILDING'
+tests = [
+    'tests/unit/test_object_state.py::TestTableState::test_a_recorded_rebuild_is_rebuilding_only_while_a_sync_runs',
+    'tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_rebuild_that_died_is_not_rebuilding_for_ever',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0198'
+describes = 'R2 state: an unreadable lake reads as live'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/object_state.py'
+old = '''
+    if not owed_known:
+        return UNAVAILABLE'''
+new = '''
+    if not owed_known:
+        return LIVE'''
+tests = [
+    'tests/unit/test_object_state.py::TestTableState::test_an_unreadable_lake_is_unavailable_whatever_else_is_known',
+    'tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_mirror_that_cannot_be_read_is_unavailable_never_live',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0200'
+describes = "R2 state: a type's state is the best of its tables, not the worst"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/object_state.py'
+old = '_WORST_FIRST = (UNAVAILABLE, REBUILDING, LIVE)'
+new = '_WORST_FIRST = (LIVE, REBUILDING, UNAVAILABLE)'
+tests = [
+    'tests/unit/test_object_state.py::TestTypeState::test_it_is_the_worst_of_its_tables',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0202'
+describes = 'R2 state: any attempt under the lock reads as rebuilding'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/object_state.py'
+old = '    if last_outcome == REBUILDING_OUTCOME:'
+new = '    if last_outcome is not None:'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_sync_that_is_not_a_rebuild_does_not_make_a_table_rebuilding',
+    'tests/unit/test_object_state.py::TestTableState::test_any_other_attempt_is_live_even_with_a_sync_running',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0206'
+describes = 'R4 hold: an unavailable type does not hold a write'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/object_state.py'
+old = '''
+    if unknown:
+        return'''
+new = '''
+    if False:
+        return'''
+tests = [
+    'tests/unit/test_object_state.py::TestHoldReason::test_unavailable_is_held_and_says_it_cannot_be_told_even_beside_a_rebuilding_type',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0207'
+describes = 'R4 hold: a rebuilding type does not hold a write'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/object_state.py'
+old = '''
+    if rebuilding:
+        return'''
+new = '''
+    if False:
+        return'''
+tests = [
+    'tests/unit/test_object_state.py::TestHoldReason::test_rebuilding_is_held_and_names_the_type',
+    'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_the_approval_is_held_with_the_reason_and_nothing_is_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0208'
+describes = 'R4 hold: a write is held for a type it does not touch'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/object_state.py'
+old = '    rebuilding = sorted({name for name in object_types if states.get(name) == REBUILDING})'
+new = '    rebuilding = sorted({name for name in states if states.get(name) == REBUILDING})'
+tests = [
+    'tests/unit/test_object_state.py::TestHoldReason::test_only_the_types_the_write_touches_count',
+    'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_a_type_whose_tables_are_not_rebuilding_is_not_held',
+]
+expect = "fails"

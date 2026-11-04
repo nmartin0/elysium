@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0778'
+describes = "SIM: a new table under an old pack name is not the pack's"
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/lineage.py'
+old = '        return None if (silo, current) in self._tables else current'
+new = '        return current'
+tests = [
+    'sim/tests/test_lineage.py::test_a_new_table_wearing_an_old_name_is_not_the_packs',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0779'
+describes = "SIM: a new column under an old pack name is not the pack's"
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/lineage.py'
+old = '        return None if (silo, table, current) in self._columns else current'
+new = '        return current'
+tests = [
+    'sim/tests/test_lineage.py::test_a_new_column_wearing_an_old_name_is_not_the_packs',
+]
+expect = "fails"

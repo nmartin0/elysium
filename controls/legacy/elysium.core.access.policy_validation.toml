@@ -1,0 +1,38 @@
+[[control]]
+id = 'LEG-0235'
+describes = 'B6: a label grant must name a label in use'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/core/access/policy_validation.py'
+old = '        if label not in declared:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_labels_decide_field_access.py::TestTheGrantItself::test_a_label_nothing_carries_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0826'
+describes = 'PERMISSIONS: a permission a listed module does not declare is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/access/policy_validation.py'
+old = '        if declared is not None and name not in declared:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_module_permissions.py::TestCheckingARole::test_a_permission_a_listed_module_does_not_declare_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0827'
+describes = 'PERMISSIONS: one from a module no longer listed is kept, not refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/access/policy_validation.py'
+old = '        declared = (modules or {}).get(module_id)'
+new = '        declared = (modules or {}).get(module_id, frozenset())'
+tests = [
+    'tests/unit/test_module_permissions.py::TestCheckingARole::test_one_from_a_module_no_longer_listed_is_kept_not_refused',
+]
+expect = "fails"

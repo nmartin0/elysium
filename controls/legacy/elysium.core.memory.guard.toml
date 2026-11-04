@@ -1,0 +1,53 @@
+[[control]]
+id = 'LEG-0390'
+describes = 'E-14: a memory is hidden from a reader who cannot see a field it came from'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/memory/guard.py'
+old = '        seen = [memory for memory in memories if set(memory.sources) <= readable]'
+new = '        seen = list(memories)'
+tests = [
+    'tests/unit/test_memory_guard.py::TestWhoSees::test_a_reader_missing_a_source_field_does_not_see_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0391'
+describes = 'E-14: a stale memory is never given to the agent'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/memory/guard.py'
+old = '        return [memory for memory, stale in self.visible(user, object_type, object_id) if not stale]'
+new = '        return [memory for memory, stale in self.visible(user, object_type, object_id)]'
+tests = [
+    'tests/unit/test_memory_guard.py::TestStaleness::test_a_changed_source_marks_it_stale_and_keeps_it_from_the_agent',
+    'tests/unit/test_memory_guard.py::TestTheAgentReadsThem::test_a_stale_memory_is_not_given_to_the_agent',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0392'
+describes = 'E-14: a memory cannot be pinned to an object that does not exist'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/memory/guard.py'
+old = '                             value=object_id)]) > 0'
+new = '                             value=object_id)]) >= 0'
+tests = [
+    'tests/unit/test_memory_guard.py::TestWriting::test_an_object_that_does_not_exist_cannot_be_written_about',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0393'
+describes = 'E-14: only its author or someone who may change the object forgets a memory'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/memory/guard.py'
+old = '        return memory.author == user.user_id or authorize('
+new = '        return True or authorize('
+tests = [
+    'tests/unit/test_memory_guard.py::TestForgetting::test_another_reader_may_not',
+    'tests/integration/test_memories_api.py::test_only_the_author_forgets_it_here',
+]
+expect = "fails"

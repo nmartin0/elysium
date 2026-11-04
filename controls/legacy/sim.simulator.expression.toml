@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0008'
+describes = 'text cannot be done arithmetic to'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/expression.py'
+old = '        if isinstance(left, str) or isinstance(right, str):'
+new = '        if False:'
+tests = [
+    'sim/tests/test_expression.py::test_text_cannot_be_done_arithmetic_to',
+]
+expect = "fails"

@@ -1,0 +1,27 @@
+[[control]]
+id = 'LEG-0683'
+describes = "UNUSUAL: a type's flags are replaced whole"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/unusual_flags.py'
+old = '''
+            conn.execute("DELETE FROM unusual_flags WHERE object_type = ?", (object_type,))
+'''
+new = ''
+tests = [
+    'tests/unit/test_unusual.py::TestTheStore::test_no_longer_unusual_is_no_longer_flagged',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0684'
+describes = "UNUSUAL: 'expected' holds for the value judged, not a changed one"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/unusual_flags.py'
+old = '               "d.record_id = f.record_id AND d.field = f.field AND d.value = f.value")'
+new = '               "d.record_id = f.record_id AND d.field = f.field")'
+tests = [
+    'tests/unit/test_unusual.py::TestTheStore::test_replaced_whole_and_expected_is_remembered_by_the_value',
+]
+expect = "fails"

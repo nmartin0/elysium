@@ -1,0 +1,42 @@
+[[control]]
+id = 'LEG-0236'
+describes = 'R15: every child run names the sync run as its parent'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/openlineage.py'
+old = '        if parent and job != RUN_JOB:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_openlineage_events.py::TestWhatASyncEmits::test_every_child_names_the_run_as_its_parent',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0238'
+describes = 'R15: a failing service warns once, naming the kind not the message'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/openlineage.py'
+old = '({type(exc).__name__})'
+new = '({exc})'
+tests = [
+    'tests/unit/test_openlineage_events.py::TestTheEmitter::test_a_failing_service_warns_once_and_the_file_still_has_everything',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0239'
+describes = 'R15: an unknown lineage key is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/openlineage.py'
+old = '''
+    if unknown:
+        raise ValueError(f"config.yaml lineage:'''
+new = '''
+    if False:
+        raise ValueError(f"config.yaml lineage:'''
+tests = [
+    'tests/unit/test_openlineage_events.py::TestTheConfigBlock::test_a_mistake_is_refused_at_load',
+]
+expect = "fails"

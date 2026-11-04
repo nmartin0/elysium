@@ -1,0 +1,144 @@
+[[control]]
+id = 'LEG-0272'
+describes = 'R4: a supported database is read as one snapshot'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '        isolation = SNAPSHOT_ISOLATION.get(self._engine.dialect.name)'
+new = '        isolation = None'
+tests = [
+    'tests/unit/test_one_consistent_read_per_silo.py::test_a_write_between_two_reads_is_not_seen_inside_the_snapshot',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0273'
+describes = 'R4: a failed read inside the snapshot costs only that read'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '''
+                with pinned.begin_nested():
+                    return [dict(row) for row in pinned.execute(statement).mappings()]'''
+new = '                return [dict(row) for row in pinned.execute(statement).mappings()]'
+tests = [
+    'tests/unit/test_one_consistent_read_per_silo.py::test_a_failed_read_does_not_poison_the_rest_of_the_snapshot',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0278'
+describes = "R5: streaming inside the snapshot leaves the savepoint's RELEASE alone"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '                    result = pinned.execute(statement)'
+new = '                    result = pinned.execution_options(stream_results=True).execute(statement)'
+tests = [
+    'tests/unit/test_sqlalchemy_adapter.py::TestItStreamsTheTable::test_inside_a_consistent_read_it_streams_the_snapshot',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0725'
+describes = "SOURCES: a column's time zone is part of its reported type"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '    if getattr(column_type, "timezone", False) and "TIME ZONE" not in text.upper():'
+new = '    if False:'
+tests = [
+    'tests/unit/test_source_type_drift.py::TestWhatEachAdapterCanSay::test_postgresql_can',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0727'
+describes = 'SOURCES: MariaDB has a query time limit'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '            cursor.execute(self._time_limit_sql(self._timeout_seconds))'
+new = '            cursor.execute("SELECT 1")'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::TestMariaDB::test_a_query_past_its_time_limit_is_stopped',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0728'
+describes = 'SOURCES: a MariaDB session refuses to write'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '            cursor.execute("SET SESSION TRANSACTION READ ONLY")'
+new = '            cursor.execute("SELECT 1")'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::TestMariaDB::test_the_session_refuses_to_write',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0729'
+describes = 'SOURCES: a PostgreSQL session refuses to write'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '                   f"-c default_transaction_read_only=on"),'
+new = '                   f""),'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::TestPostgreSQL::test_the_session_refuses_to_write',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0730'
+describes = 'SOURCES: MySQL-family connections are recycled before the server drops them'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '            **({"pool_recycle": MYSQL_POOL_RECYCLE_SECONDS} if self._mysql_family else {}),'
+new = '            **({}),'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::TestMariaDB::test_pooled_connections_are_recycled_before_the_server_drops_them',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0743'
+describes = 'SOURCES: an account that bypasses row-level security is not warned'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '        if row is None or not row["relrowsecurity"] or row["exempt"]:'
+new = '        if row is None or not row["relrowsecurity"]:'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::TestRowsHiddenFromTheSync::test_an_account_that_bypasses_it_is_not_warned',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0744'
+describes = "SOURCES: a table's owner is exempt from row-level security unless forced"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '        if row["owns"] and not row["relforcerowsecurity"]:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::TestRowsHiddenFromTheSync::test_the_owner_is_exempt_unless_forced',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0766'
+describes = 'SOURCES: a MariaDB copy longer than the time limit is not cut off'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/sqlalchemy_adapter.py'
+old = '        conn.exec_driver_sql(self._time_limit_sql(0))'
+new = '        conn.exec_driver_sql(self._time_limit_sql(self._timeout_seconds))'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::TestMariaDB::test_a_copy_longer_than_the_limit_finishes_and_the_limit_returns',
+]
+expect = "fails"

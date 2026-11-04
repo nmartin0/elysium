@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0114'
+describes = 'R8: a difference fails the run'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/reconcile.py'
+old = '    return 0 if all(result.clean or result.skipped for result in results) else 1'
+new = '    return 0'
+tests = [
+    'tests/unit/test_reconcile_against_the_source.py::TestAgainstARealSourceAndARealSync::test_changes_behind_the_mirror_are_found_exactly',
+]
+expect = "fails"

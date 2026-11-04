@@ -1,0 +1,77 @@
+[[control]]
+id = 'LEG-0895'
+describes = 'SILO SECURITY: inherit takes the silo rule'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/silo_security.py'
+old = '        type_def["security"] = dict(rules[silo])'
+new = '        pass'
+tests = [
+    'tests/unit/test_silo_security.py::TestInheriting::test_the_type_takes_the_silos_rule_and_says_from_where',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0896'
+describes = 'SILO SECURITY: a silo with no rule refuses inherit'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/silo_security.py'
+old = '        if silo not in rules:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_silo_security.py::TestInheriting::test_a_silo_with_no_rule_refuses_inherit',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0897'
+describes = 'SILO SECURITY: a type with no source cannot inherit'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/silo_security.py'
+old = '        if not silo:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_silo_security.py::TestInheriting::test_a_type_with_no_source_cannot_inherit',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0898'
+describes = 'SILO SECURITY: only unrestricted or a field is a silo rule'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/silo_security.py'
+old = '        elif (isinstance(declared, Mapping) and set(declared) == {"field"}'
+new = '        elif (isinstance(declared, Mapping) and "field" in declared'
+tests = [
+    'tests/unit/test_silo_security.py::TestTheSiloRule::test_anything_else_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0899'
+describes = 'SILO SECURITY: the type records where its rule came from'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/silo_security.py'
+old = '        type_def[INHERITED_FROM] = silo'
+new = '        pass'
+tests = [
+    'tests/unit/test_silo_security.py::TestInheriting::test_the_type_takes_the_silos_rule_and_says_from_where',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0917'
+describes = 'SILO SECURITY: a frozen silo map is read like a plain one'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/silo_security.py'
+old = 'if not isinstance(silo, Mapping) or "security" not in silo:'
+new = 'if not isinstance(silo, dict) or "security" not in silo:'
+tests = [
+    'tests/unit/test_new_type.py::test_a_frozen_silo_map_is_read_like_a_plain_one',
+]
+expect = "fails"

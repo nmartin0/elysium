@@ -1,0 +1,54 @@
+[[control]]
+id = 'LEG-1105'
+describes = 'v2 sets: a type nobody may read is refused as a 404, as an unknown one is'
+invariant = 'I1'
+kind = 'semantic'
+path = 'src/elysium/api/v2/loading.py'
+old = '''
+    except ObjectSetNotFound:
+        raise not_found() from None'''
+new = '''
+    except ObjectSetNotFound:
+        raise invalid_argument("Unknown object type.") from None'''
+tests = [
+    'tests/integration/test_api_v2.py::TestOneObject::test_unknown_hidden_and_denied_are_one_404_in_the_same_words',
+    'tests/integration/test_api_v2.py::TestObjectSets::test_an_unknown_or_ungranted_type_in_a_set_is_the_same_404',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1122'
+describes = 'v2 paging: the query a token is bound to includes the set and the ordering'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/loading.py'
+old = '''
+    query = paging.fingerprint(raw_query, [(t.field, t.descending) for t in order_by], list(select))
+'''
+new = '''
+    query = paging.fingerprint()
+'''
+tests = [
+    'tests/integration/test_api_v2.py::TestPageTokens::test_every_way_a_token_can_be_wrong_looks_the_same',
+    'tests/integration/test_api_v2.py::TestPageTokens::test_the_set_posted_for_load_objects_binds_its_tokens_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1154'
+describes = 'v2 api: an unforeseen ValueError from load or count is a 400, not a fault'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/v2/loading.py'
+old = '''
+    except ValueError:
+        raise invalid_argument(UNEVALUABLE_SENTENCE) from None
+'''
+new = '''
+    except ZeroDivisionError:
+        raise invalid_argument(UNEVALUABLE_SENTENCE) from None
+'''
+tests = [
+    'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_mediator_refusal_nobody_foresaw_is_a_fixed_400_never_its_words',
+]
+expect = "fails"

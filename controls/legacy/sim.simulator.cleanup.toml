@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0025'
+describes = 'cleanup will not signal something that is not a server'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/cleanup.py'
+old = '        if not _is_engine(command):'
+new = '        if False:'
+tests = [
+    'sim/tests/test_cleanup.py::test_a_process_naming_the_directory_is_found_only_if_it_is_a_server',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0026'
+describes = 'a stray is asked to stop rather than killed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/cleanup.py'
+old = '        os.kill(stray.pid, signal.SIGTERM)'
+new = '        os.kill(stray.pid, signal.SIGKILL)'
+tests = [
+    'sim/tests/test_cleanup.py::test_one_that_will_not_stop_is_reported_rather_than_forced',
+]
+expect = "fails"

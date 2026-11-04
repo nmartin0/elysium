@@ -1,0 +1,16 @@
+[[control]]
+id = 'LEG-0388'
+describes = 'E-06: a source failure is a word from a closed list, not the exception class'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/source_health.py'
+old = '''
+            failures[name] = failure_kind(exc)
+'''
+new = '''
+            failures[name] = type(exc).__name__
+'''
+tests = [
+    'tests/unit/test_sources_checked.py::TestSourceFailures::test_a_failing_one_is_named_by_what_failed',
+]
+expect = "fails"

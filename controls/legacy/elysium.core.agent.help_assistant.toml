@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0263'
+describes = 'Help: a field known but unreadable is described as hidden'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/agent/help_assistant.py'
+old = '            hidden = "" if field.get("readable", True) else ", value hidden"'
+new = '            hidden = ""'
+tests = [
+    'tests/integration/test_help_assistant.py::test_a_field_known_but_unreadable_says_so',
+]
+expect = "fails"

@@ -1,0 +1,112 @@
+[[control]]
+id = 'LEG-0295'
+describes = 'R37: a role that cannot read an input cannot read the result'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/derived_fields.py'
+old = '            if grant in allowed and not all(f"read:{type_name}.{name}" in allowed for name in inputs):'
+new = '            if False:'
+tests = [
+    'tests/unit/test_derived_fields.py::TestWhoMayReadOne::test_a_role_that_cannot_read_an_input_cannot_read_the_result',
+    'tests/unit/test_derived_fields.py::TestThroughARealDeployment::test_a_role_without_an_input_is_refused_the_result',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0303'
+describes = 'R37: an empty input is an empty result, not zero'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/derived_fields.py'
+old = '''
+    if left is None or right is None:
+        return None'''
+new = '''
+    if left is None or right is None:
+        left, right = left or 0, right or 0'''
+tests = [
+    'tests/unit/test_derived_fields.py::TestTheFormulas::test_an_empty_input_is_an_empty_result_not_zero',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0304'
+describes = 'R37: years_since counts a birthday not yet reached this year'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/derived_fields.py'
+old = '        return today.year - born.year - ((today.month, today.day) < (born.month, born.day))'
+new = '        return today.year - born.year'
+tests = [
+    'tests/unit/test_derived_fields.py::TestTheFormulas::test_years_since_counts_whole_years',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0305'
+describes = "R37: a decimal result is rounded to gold's scale"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/derived_fields.py'
+old = '''
+    if data_type == "decimal":
+        # ROUNDED BEFORE coerce()'''
+new = '''
+    if False:
+        # ROUNDED BEFORE coerce()'''
+tests = [
+    'tests/unit/test_derived_fields.py::TestTheFormulas::test_a_decimal_result_is_rounded_to_what_gold_stores',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0306'
+describes = 'R37: arithmetic is exact to what was typed, not binary float'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/derived_fields.py'
+old = '        exact_left, exact_right = Decimal(str(left)), Decimal(str(right))'
+new = '        exact_left, exact_right = Decimal(left), Decimal(right)'
+tests = [
+    'tests/unit/test_derived_fields.py::TestTheFormulas::test_float_arithmetic_is_exact_to_what_was_typed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0317'
+describes = 'DEP-2: hypothesis finds an age off by a birthday'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/derived_fields.py'
+old = '        return today.year - born.year - ((today.month, today.day) < (born.month, born.day))'
+new = '        return today.year - born.year - ((today.month, today.day) <= (born.month, born.day))'
+tests = [
+    'tests/unit/test_properties.py::test_years_since_agrees_with_counting_birthdays',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0626'
+describes = 'PREDICT: reading a prediction needs reading its answer'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/derived_fields.py'
+old = '    derived += [(type_name, field_name, (*prediction.inputs, prediction.target))'
+new = '    derived += [(type_name, field_name, prediction.inputs)'
+tests = [
+    'tests/unit/test_predictions.py::TestTheDeclaration::test_reading_a_prediction_needs_reading_the_answer_and_every_input',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0810'
+describes = 'ENRICH: reading an inference needs reading its inputs'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/derived_fields.py'
+old = '    derived += [(type_name, field_name, enrichment.inputs)'
+new = '    derived += [(type_name, field_name, ())'
+tests = [
+    'tests/unit/test_enriched_fields.py::test_reading_an_inference_needs_reading_what_it_was_inferred_from',
+]
+expect = "fails"

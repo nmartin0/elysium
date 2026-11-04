@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0047'
+describes = 'the consumer accounts must send a password'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/silos/postgres.py'
+old = '        self._require_passwords_of_consumers()'
+new = '        pass'
+tests = [
+    'sim/tests/consumer/test_read_only.py::test_the_reader_must_send_a_password',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0805'
+describes = "SIM: a streaming replica's replay can be paused"
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/silos/postgres.py'
+old = '            conn.execute("SELECT pg_wal_replay_pause()" if paused'
+new = '            conn.execute("SELECT 1" if paused'
+tests = [
+    'sim/tests/test_replicas.py::test_paused_replay_is_lag_and_resumed_replay_catches_up',
+]
+expect = "fails"

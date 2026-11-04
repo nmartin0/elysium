@@ -1,0 +1,344 @@
+[[control]]
+id = 'LEG-0089'
+describes = "bench: get_object refuses another type's id"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '''
+        _reject_ids_of_another_type(step["object_type"], object_ids, gathered, visible_schema)
+'''
+new = ''
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestAnotherTypesId::test_the_bench_s_wrong_step_is_refused_with_the_link_to_follow',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0090'
+describes = 'bench: get_field refuses an unknown field'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '            {"object_type": step.get("object_type"), "field_names": [step.get("field_name")]},'
+new = '            {"object_type": step.get("object_type"), "field_names": []},'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestACountIsNotAField::test_get_field_is_refused_too_rather_than_answering_none',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0091'
+describes = 'bench: a count-shaped field name gets the aggregate step'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if id_field in unknown or any(str(name).lower() in _AGGREGATE_WORDS for name in unknown):'
+new = '        if id_field in unknown:'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestACountIsNotAField::test_get_object_names_the_step_that_counts',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0092'
+describes = 'bench: the asymmetry nudge names what is missing'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '                    f"{_what_is_missing(object_type, id_map)}")'
+new = '                    "")'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestTheNudgeSaysWhatIsMissing::test_it_names_the_object_and_the_field',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0093'
+describes = 'bench: an id from a link result is never refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if owner is None or object_id in this_type or object_id in any_type:'
+new = '        if owner is None or object_id in this_type:'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestTheIdGuardIsConservative::test_an_id_also_seen_in_a_link_result_is_allowed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0094'
+describes = 'bench: an id read as this type is never refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if owner is None or object_id in this_type or object_id in any_type:'
+new = '        if owner is None or object_id in any_type:'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestTheIdGuardIsConservative::test_an_id_already_read_as_this_type_is_allowed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0095'
+describes = "bench: a refused step is not 'already had'"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '                seen_signatures.difference_update(remembered)'
+new = '                pass'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestARefusedStepIsNotAlreadyHad::test_the_repeat_is_refused_with_its_reason_not_called_a_duplicate',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0096'
+describes = 'bench: asking for the id field is explained'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if id_field and id_field in unknown:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestARefusedStepIsNotAlreadyHad::test_asking_for_the_id_field_says_the_ids_are_already_in_hand',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0097'
+describes = 'bench: a postponed finish is granted when its gap closes'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '            if finish_postponed and _detect_asymmetry(gathered) is None:'
+new = '            if False:'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestThePostponedFinish::test_the_finish_it_asked_for_is_granted_once_the_gap_is_closed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0098'
+describes = 'bench: only a genuine finish is resumed'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '                finish_postponed = not already_nudged and fallback is None'
+new = '                finish_postponed = not already_nudged'
+tests = [
+    'tests/unit/test_bench_failures_are_answered.py::TestThePostponedFinish::test_a_finish_fabricated_from_an_unusable_reply_is_not_resumed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0118'
+describes = "R64: the agent's aggregate hears the scan was cut"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '''
+        if outcome.scan_truncated:
+            grouped = _what_a_truncated_aggregate_may_say(step, grouped)'''
+new = '        pass'
+tests = [
+    'tests/unit/test_a_short_count_never_reaches_the_model.py::TestTheAgent::test_a_short_count_is_a_lower_bound',
+    'tests/unit/test_a_short_count_never_reaches_the_model.py::TestTheAgent::test_a_short_sum_is_refused_with_what_to_do',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0267'
+describes = 'AL-10: a spent token budget stops the next model call'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '            if (self.max_tokens_per_query and usage is not None'
+new = '            if (False and usage is not None'
+tests = [
+    'tests/unit/test_a_question_has_a_token_budget.py::test_the_budget_stops_the_next_call_once_spent',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0396'
+describes = 'E-14: the agent is given what people remembered about an object it read'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '            self._gather_memories(user_record, step["object_type"], object_id, gathered)'
+new = '            pass'
+tests = [
+    'tests/unit/test_memory_guard.py::TestTheAgentReadsThem::test_reading_an_object_brings_its_fresh_memories_once',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0412'
+describes = 'AL-11: the agent loop hands its cancel event to the model call'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '                    constrain=self.constrain_steps, cancel=cancel_event,'
+new = '                    constrain=self.constrain_steps, cancel=None,'
+tests = [
+    'tests/unit/test_cancel_stops_the_model_call.py::TestTheLoop::test_a_cancelled_call_ends_the_run_as_cancelled',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0427'
+describes = 'AGENT-FEATURES: a filter condition is refused while filter_operators is off'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if features.filter_operators and isinstance(value, dict):'
+new = '        if isinstance(value, dict):'
+tests = [
+    'tests/unit/test_agent_features.py::TestOffChangesNothing::test_a_condition_is_refused_when_off',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0428'
+describes = 'AGENT-FEATURES: a condition becomes its operator, not equality'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '            return agent_conditions(filter_)'
+new = '            return as_equality_conditions(filter_)'
+tests = [
+    'tests/unit/test_agent_features.py::TestFilterOperators::test_a_range_finds_by_range',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0429'
+describes = 'AGENT-FEATURES: the cap truncates and states the total'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if cap is not None and isinstance(object_ids, list) and len(object_ids) > cap:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_agent_features.py::TestSearchResultCap::test_over_the_cap_shows_the_first_and_says_how_many',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0430'
+describes = 'AGENT-FEATURES: a memory is written only when the question asks'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if not self.ASKS_TO_REMEMBER.search(query_text or ""):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_agent_features.py::TestRememberFromQuery::test_a_question_that_did_not_ask_records_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0431'
+describes = 'AGENT-FEATURES: at most one memory per answer'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if any(entry.get("step") == "remember" for entry in gathered):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_agent_features.py::TestRememberFromQuery::test_only_once_per_answer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0616'
+describes = 'MEANING-AGENT: a ranking that cannot answer says why'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '        if ranked is None or not ranked.available:'
+new = '        if ranked is None:'
+tests = [
+    'tests/unit/test_agent_features.py::TestMeaningSearch::test_when_it_cannot_answer_the_model_is_told_why_not_handed_an_empty_list',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0711'
+describes = 'PROGRESS: the loop hands on a copy of what it gathered'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '                    progress(list(gathered))'
+new = '                    progress(gathered)'
+tests = [
+    'tests/unit/test_the_loop_reports_its_progress.py::test_what_it_is_given_is_a_copy',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0712'
+describes = 'PROGRESS: a failing progress hook never stops the question'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '                except Exception:  # noqa: BLE001 - showing progress must never stop a question'
+new = '                except ZeroDivisionError:'
+tests = [
+    'tests/unit/test_the_loop_reports_its_progress.py::test_a_failing_hook_does_not_stop_the_question',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0814'
+describes = 'LOOP: an invented step is corrected, not nudged as a finish'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '            if step["step"] == "finish" and step.get("unrecognised"):'
+new = '            if False:'
+tests = [
+    'tests/unit/test_stop_reason_is_named.py::test_an_invented_count_is_answered_with_the_step_it_meant',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0839'
+describes = 'ASSISTANT PERIOD: the period reaches the mediator'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '''
+            period=step.get("period"),
+        )'''
+new = '        )'
+tests = [
+    'tests/unit/test_the_assistant_asks_by_period.py::TestTheLoop::test_the_period_reaches_the_mediator_and_each_period_is_named_by_its_date',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0840'
+describes = 'ASSISTANT PERIOD: each period is named by its ISO date'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = 'grouped = {start.isoformat(): total for start, total in grouped.items()}'
+new = 'pass'
+tests = [
+    'tests/unit/test_the_assistant_asks_by_period.py::TestTheLoop::test_the_period_reaches_the_mediator_and_each_period_is_named_by_its_date',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0841'
+describes = 'ASSISTANT PERIOD: two periods are two different steps, not a repeat'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/agentic_loop.py'
+old = '                _hashable(step.get("period")))'
+new = '                None)'
+tests = [
+    'tests/unit/test_the_assistant_asks_by_period.py::TestTheLoop::test_two_periods_are_two_different_steps',
+]
+expect = "fails"

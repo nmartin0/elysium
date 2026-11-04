@@ -1,0 +1,31 @@
+[[control]]
+id = 'LEG-0004'
+describes = 'a watch naming a silo that does not exist is a mistake, not drift'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/oracle.py'
+old = '''
+            silo = world.silo(watch.silo)
+            dialect = dialect_for(silo.kind)
+            try:'''
+new = '''
+            try:
+                silo = world.silo(watch.silo)
+                dialect = dialect_for(silo.kind)'''
+tests = [
+    'sim/tests/test_oracle.py::test_a_mistake_in_a_watch_is_not_reported_as_drift',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0005'
+describes = "a failure that is not the driver's is not recorded as a sample"
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/oracle.py'
+old = '            except silo.driver_errors():'
+new = '            except Exception:  # noqa: BLE001'
+tests = [
+    'sim/tests/test_oracle.py::test_a_failure_that_is_not_the_databases_is_not_recorded',
+]
+expect = "fails"

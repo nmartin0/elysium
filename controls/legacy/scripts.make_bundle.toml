@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0962'
+describes = 'a bundle leaves out a lane with nothing new'
+invariant = 'none'
+kind = 'semantic'
+path = 'scripts/make_bundle.sh'
+old = '  if [[ "$ahead" == 0 ]]; then echo'
+new = '  if false; then echo'
+tests = [
+    'tests/unit/test_patch_scripts.py::test_bundle_leaves_out_a_lane_with_nothing_new',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0963'
+describes = 'a bundle with nothing new anywhere is refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'scripts/make_bundle.sh'
+old = '[[ -s "$work/$name/ORDER" ]] || fail "nothing new in any lane"'
+new = 'true'
+tests = [
+    'tests/unit/test_patch_scripts.py::test_bundle_refuses_when_no_lane_has_anything_new',
+]
+expect = "fails"

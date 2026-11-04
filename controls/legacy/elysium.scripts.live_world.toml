@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0799'
+describes = 'LIVE: the harness names a value Elysium serves wrongly'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/live_world.py'
+old = '             for column in truth[key] if served[key].get(column) != truth[key][column]]'
+new = '             for column in truth[key] if False]'
+tests = [
+    'tests/unit/test_live_world.py::TestHowItJudges::test_a_missing_an_extra_and_a_wrong_row_are_each_named',
+]
+expect = "fails"

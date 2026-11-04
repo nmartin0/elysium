@@ -1,0 +1,40 @@
+[[control]]
+id = 'LEG-0505'
+describes = 'WINDOWS: a wake is never sooner than a minute'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_windows.py'
+old = '    due = max(crossing.timestamp(), now.timestamp() + MIN_SPACING_SECONDS)'
+new = '    due = crossing.timestamp()'
+tests = [
+    'tests/integration/test_trigger_windows.py::TestTheCrossing::test_never_sooner_than_a_minute',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0506'
+describes = 'WINDOWS: nothing left to cross clears the timer'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_windows.py'
+old = '''
+        timers.cancel(KIND, trigger.trigger_id)
+        return None'''
+new = '        return None'
+tests = [
+    'tests/integration/test_trigger_windows.py::TestItSetsATimerForTheNextCrossing::test_nothing_left_to_cross_means_no_timer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0515'
+describes = "HOURS: a trigger's timer reads the window in its own unit"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_windows.py'
+old = '                crossing = earliest + span'
+new = '                crossing = earliest + span * 24'
+tests = [
+    'tests/unit/test_relative_hours.py::TestOneHelperForEveryReader::test_a_trigger_wakes_when_a_record_turns_n_hours_old',
+]
+expect = "fails"

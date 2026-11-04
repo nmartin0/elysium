@@ -1,0 +1,175 @@
+[[control]]
+id = 'LEG-0932'
+describes = 'USED BY: a role holding a grant that names the thing is listed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '            if (not name and whole_type and matches(owner, None)) or (name and matches(owner, name)):'
+new = '            if False:'
+tests = [
+    'tests/unit/test_used_by.py::test_a_field_lists_each_block_that_reads_it',
+    'tests/unit/test_used_by_is_complete.py::test_whatever_the_loader_refuses_the_report_lists',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0933'
+describes = 'USED BY: a type that borrows its row rule through the thing is listed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '        for hop_type, hop_field in _rule_end(schema, owner)[1:]:'
+new = '        for hop_type, hop_field in _rule_end(schema, owner)[2:]:'
+tests = [
+    'tests/unit/test_used_by.py::test_other_types_that_borrow_a_row_rule_are_listed_with_what_they_borrow',
+    'tests/unit/test_used_by_is_complete.py::test_whatever_the_loader_refuses_the_report_lists',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0934'
+describes = 'USED BY: a derived field that is calculated from the field is listed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '        if field in derivation.inputs:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_used_by.py::test_a_field_lists_each_block_that_reads_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0935'
+describes = 'USED BY: an action that sets the field is listed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '                if (mutation.get("set") or {}).get("property") == field:'
+new = '                if False:'
+tests = [
+    'tests/unit/test_used_by.py::test_a_field_lists_each_block_that_reads_it',
+    'tests/unit/test_used_by_is_complete.py::test_whatever_the_loader_refuses_the_report_lists',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0936'
+describes = 'USED BY: the links of a type are listed'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '    for name in sorted(names):'
+new = '    for name in []:'
+tests = [
+    'tests/unit/test_used_by.py::test_a_type_lists_grants_links_actions_and_triggers_but_not_its_own_blocks',
+    'tests/unit/test_used_by_is_complete.py::test_whatever_the_loader_refuses_the_report_lists',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0937'
+describes = 'USED BY: a role with several grants is still one row'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '            found.append(Referrer("grant", f"role {role}", '
+new = '            found.extend(Referrer("grant", f"role {role}", f"{g}") for g in named)  # '
+tests = [
+    'tests/unit/test_used_by.py::test_a_role_is_one_row_however_many_grants_it_has',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0952'
+describes = 'USED BY: a type named as a replacement is listed'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '              if name != object_type and _replaced_by(definition) == object_type]'
+new = '              if False]'
+tests = [
+    'tests/unit/test_used_by.py::test_a_deprecated_thing_that_names_a_replacement_is_a_reference_to_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1007'
+describes = 'a field a type is searched by meaning from is listed as a blocker'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '    if searched and field in searched.inputs:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_used_by_is_complete.py::test_a_field_a_type_is_searched_by_is_listed',
+    'tests/integration/test_removal_from_the_ui.py::TestWhatASearchByMeaningReadsBlocksItsRemoval::test_the_blocker_is_shown_rather_than_a_generic_unloadable_409',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1008'
+describes = 'an f-string link: grant call is not silently excluded from the grant probe'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '(LINK_SUBJECT + name,))'
+new = '(f"link:{name}",))'
+tests = [
+    'tests/unit/test_grant_vocabulary_consistency.py::test_every_verb_the_code_asks_for_can_be_granted',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1027'
+describes = 'a row-security blocker lists the type whose rule borrows through the thing'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '                                      (owner, f"{hop_type}.{hop_field}")))'
+new = '                                      ()))'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_blockers_naming_what_they_cannot_discover_are_counted_not_named',
+    'tests/unit/test_used_by_subjects.py::test_every_row_the_fixture_configuration_produces_lists_what_it_mentions',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1028'
+describes = "a derived field's row lists the fields it is calculated from"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '                name, *derivation.inputs)'
+new = '                name)'
+tests = [
+    'tests/unit/test_used_by_subjects.py::test_every_kind_of_row_in_the_hand_built_schema_lists_what_it_mentions',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1029'
+describes = 'a link row lists the ends it joins'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '                              tuple(f"{owner}.{end}" for owner, end in sorted(_link_ends(schema, name)))))'
+new = '                              ()))'
+tests = [
+    'tests/unit/test_used_by_subjects.py::test_every_row_the_fixture_configuration_produces_lists_what_it_mentions',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1030'
+describes = 'the name asked about is not counted among the names a row hides behind'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/used_by.py'
+old = '        item, subjects=tuple(name for name in item.subjects if name not in asked_about)) for item in found}'
+new = '        item, subjects=item.subjects) for item in found}'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestRemoving::test_a_deprecated_field_nothing_names_is_deleted_and_the_deployment_reloaded',
+    'tests/integration/test_removal_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_the_names_they_can_discover_are_shown_and_only_those',
+]
+expect = "fails"

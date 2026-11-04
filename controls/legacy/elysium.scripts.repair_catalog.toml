@@ -1,0 +1,16 @@
+[[control]]
+id = 'LEG-0058'
+describes = 'repair takes the same lock as the sync'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/repair_catalog.py'
+old = 'from elysium.core.mirror.sync_lock import single_writer'
+new = '''
+import contextlib
+@contextlib.contextmanager
+def single_writer(*a, **k):
+    yield'''
+tests = [
+    'tests/unit/test_repair_waits_for_the_sync.py::TestBothWritersUseIt::test_and_so_does_the_repair',
+]
+expect = "fails"

@@ -1,0 +1,16 @@
+[[control]]
+id = 'LEG-0231'
+describes = 'R20: the preview reports values that would change'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/preview_ontology.py'
+old = '''
+                if differing:
+'''
+new = '''
+                if False:
+'''
+tests = [
+    'tests/unit/test_preview_an_ontology_change.py::test_a_change_to_values_is_reported_and_nothing_live_changes',
+]
+expect = "fails"

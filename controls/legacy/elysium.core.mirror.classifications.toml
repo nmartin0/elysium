@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0107'
+describes = 'R12: a removed label comes off the table'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/classifications.py'
+old = '                        tx.remove_properties(CLASSIFICATIONS_PROPERTY)'
+new = '                        pass'
+tests = [
+    'tests/unit/test_classifications_propagate.py::TestTheRealSyncRecordsThem::test_a_label_removed_from_the_ontology_comes_off_every_table',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0109'
+describes = 'R12: a many-field column carries the union'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/classifications.py'
+old = '        _merge(by_table.setdefault(f"{GOLD_HISTORY_NAMESPACE}.{object_type}", {}), "values", everything)'
+new = '        pass'
+tests = [
+    'tests/unit/test_classifications_propagate.py::TestWhereTheLabelsGo::test_a_column_holding_any_field_s_values_carries_every_label',
+]
+expect = "fails"

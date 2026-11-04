@@ -1,0 +1,17 @@
+[[control]]
+id = 'LEG-1129'
+describes = 'criteria on the action itself are refused, not loaded as a rule that does nothing'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/submission_criteria.py'
+old = '''
+        if "submission_criteria" in action_def:
+'''
+new = '''
+        if False:
+'''
+tests = [
+    'tests/unit/test_criteria_validation.py::test_criteria_on_the_action_itself_are_refused_and_the_message_says_where_they_go',
+    'tests/unit/test_lint_deployment.py::test_lint_rejects_criteria_placed_on_the_action_instead_of_a_sub_write',
+]
+expect = "fails"

@@ -1,0 +1,56 @@
+[[control]]
+id = 'LEG-0072'
+describes = 'a vanished column with writes against it REFUSES the sync'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/drift_policy.py'
+old = '    if applied == 0 and pending == 0:'
+new = '    if True:'
+tests = [
+    'tests/unit/test_drift_policy.py::TestRemovedColumn::test_refuses_when_a_pending_write_depends_on_it',
+    'tests/unit/test_drift_policy.py::TestRemovedColumn::test_refuses_when_applied_history_depends_on_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0073'
+describes = 'a type that stopped matching is refused even with no writes'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/drift_policy.py'
+old = '''
+        absorbed=False,
+        shape=DriftShape.TYPE_CHANGED,'''
+new = '''
+        absorbed=True,
+        shape=DriftShape.TYPE_CHANGED,'''
+tests = [
+    'tests/unit/test_drift_policy.py::TestTypeChange::test_is_always_refused_even_with_no_writes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0075'
+describes = 'a bare removal is NOT reported as a possible rename'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/drift_policy.py'
+old = '        if appeared:'
+new = '        if True:'
+tests = [
+    'tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestARenamedColumn::test_an_ordinary_DROP_is_not_described_as_a_possible_rename',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0800'
+describes = 'DRIFT: a suspected rename holds the table'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/drift_policy.py'
+old = '        if appeared and on_suspected_rename != "serve_empty":'
+new = '        if False:'
+tests = [
+    'tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestARenamedColumn::test_a_rename_holds_the_table_at_its_last_good_copy',
+]
+expect = "fails"

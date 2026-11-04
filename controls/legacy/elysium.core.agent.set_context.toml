@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0516'
+describes = 'HOURS: the agent says hours'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/set_context.py'
+old = '        unit = "hours" if any('
+new = '        unit = "days" if any('
+tests = [
+    'tests/unit/test_relative_hours.py::TestOneHelperForEveryReader::test_the_agent_says_hours',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0559'
+describes = 'ASK-ABOUT-SET: a field the asker cannot read is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/set_context.py'
+old = '        if condition.field not in fields:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_set_context.py::TestRefused::test_a_field_the_asker_cannot_read_reads_as_unknown',
+]
+expect = "fails"

@@ -1,0 +1,40 @@
+[[control]]
+id = 'LEG-0783'
+describes = 'SIM: an expired REST token is refused and says so'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/silos/rest.py'
+old = '        if now >= expires:'
+new = '        if False:'
+tests = [
+    'sim/tests/test_rest_silo.py::test_a_token_works_until_it_expires_and_then_says_so',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0784'
+describes = 'SIM: a REST fault_rate really fails requests'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/silos/rest.py'
+old = '''
+            if self._random.random() >= self.fault_rate:
+                return None'''
+new = '            return None'
+tests = [
+    'sim/tests/test_rest_silo.py::test_every_request_can_fail_with_a_server_error',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0785'
+describes = 'SIM: If-Modified-Since filters records'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/silos/rest.py'
+old = '                records = silo._modified_since(records, since)'
+new = '                pass'
+tests = [
+    'sim/tests/test_rest_silo.py::test_if_modified_since_returns_only_what_changed',
+]
+expect = "fails"

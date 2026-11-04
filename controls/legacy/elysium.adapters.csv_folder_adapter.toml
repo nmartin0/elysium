@@ -1,0 +1,150 @@
+[[control]]
+id = 'LEG-0748'
+describes = 'CSV: a latest-shaped table reads only the newest file'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '        return files[-1:] if self._spec(table_name)["shape"] == "latest" else files'
+new = '        return files'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestTheTwoShapes::test_latest_reads_only_the_newest_file',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0749'
+describes = 'CSV: in a combined table the newer file wins'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '            newest.update(this_file)'
+new = '            newest.update({k: v for k, v in this_file.items() if k not in newest})'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestTheTwoShapes::test_combined_reads_them_all_and_the_newer_file_wins',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0750'
+describes = 'CSV: files are ordered by when they were written'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '            chosen.append((entry.stat().st_mtime_ns, name, Path(entry.path)))'
+new = '            chosen.append((0, name, Path(entry.path)))'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestTheTwoShapes::test_newest_is_by_when_it_was_written_not_its_name',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0751'
+describes = "CSV: a duplicate within one file reaches the sync's guard"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '                    this_file.setdefault(key, []).append(row)'
+new = '                    this_file[key] = [row]'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestTheTwoShapes::test_a_duplicate_within_one_file_is_left_for_the_syncs_guard',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0752'
+describes = 'CSV: a broken line stops the table, naming the file and line'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '                if len(record) != len(header):'
+new = '                if False:'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestAFileThatCannotBeRead::test_a_broken_line_stops_the_table_naming_the_file_and_line',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0753'
+describes = 'CSV: half-written and lock files are not read'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '                    or name.lower().endswith(TEMPORARY)'
+new = '                    or False'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestWhatIsNotRead::test_half_written_hidden_and_lock_files',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0754'
+describes = "CSV: one listing of a table's files per sync"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '''
+        if self._pinned is not None:
+            self._pinned[table_name] = files'''
+new = '''
+        if False:
+            self._pinned[table_name] = files'''
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestWhatIsNotRead::test_a_file_arriving_mid_sync_waits_for_the_next',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0755'
+describes = "CSV: Excel's sep= line names the delimiter"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '        if first.rstrip("\r").lower().startswith("sep=") and len(first.rstrip("\r")) == 5:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestFormatsAsTheyArrive::test_excel_on_windows',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0756'
+describes = 'CSV: the declared null values read as empty'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '                rows.append((line, {name: (None if value in self.null_values else value)'
+new = '                rows.append((line, {name: value'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestFormatsAsTheyArrive::test_empty_means_null_and_others_can_be_named',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0795'
+describes = 'CSV: a zipped file is opened'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '''
+        if name.endswith(".zip"):
+            try:'''
+new = '''
+        if False:
+            try:'''
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestCompressedFiles::test_a_zipped_export_from_the_simulator_is_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0801'
+describes = 'CSV: a file ending part-way through a line is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/csv_folder_adapter.py'
+old = '        if bare and not text.endswith(("\n", "\r")) and not self.allow_unterminated:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_csv_folder_adapter.py::TestAFileEndingPartWayThroughALine::test_it_is_refused_naming_the_file',
+]
+expect = "fails"

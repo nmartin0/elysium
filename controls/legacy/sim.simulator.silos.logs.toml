@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0018'
+describes = 'rotated log parts are read oldest first'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/silos/logs.py'
+old = '        key=lambda candidate: int(candidate.suffix.lstrip(".")), reverse=True,'
+new = '        key=lambda candidate: int(candidate.suffix.lstrip(".")),'
+tests = [
+    'sim/tests/test_audit.py::test_a_log_is_read_in_the_order_things_happened',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0019'
+describes = 'rotation moves a log aside rather than truncating it'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/silos/logs.py'
+old = '    path.rename(moved)'
+new = '    moved.write_text(path.read_text()[:0]); path.unlink()'
+tests = [
+    'sim/tests/test_audit.py::test_rotation_keeps_everything',
+]
+expect = "fails"

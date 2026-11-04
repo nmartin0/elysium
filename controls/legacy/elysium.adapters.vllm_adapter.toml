@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0700'
+describes = "TIMING: llama-server's own timings are read"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/vllm_adapter.py'
+old = '                      writing_seconds=_milliseconds(timings.get("predicted_ms")),'
+new = '                      writing_seconds=None,'
+tests = [
+    'tests/unit/test_where_a_questions_time_goes.py::TestOpenAIStyle::test_llama_servers_own_timings',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0717'
+describes = 'ANSWER: an OpenAI-style answer is given max_tokens'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/vllm_adapter.py'
+old = '''
+        if not json_mode and self.prose_max_tokens:
+            payload["max_tokens"] = self.prose_max_tokens'''
+new = '''
+        if False:
+            payload["max_tokens"] = self.prose_max_tokens'''
+tests = [
+    'tests/unit/test_shorter_answers.py::TestOpenAIStyle::test_max_tokens_and_finish_reason',
+]
+expect = "fails"

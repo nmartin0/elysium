@@ -1,0 +1,43 @@
+[[control]]
+id = 'LEG-0048'
+describes = 'each consumer account has its own password'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/silos/reader.py'
+old = '    return f"{account}-{digest[:16]}"'
+new = '    return f"shared-{digest[:16]}"'
+tests = [
+    'sim/tests/consumer/test_read_only.py::test_the_writer_has_its_own_password',
+    'sim/tests/test_relational.py::test_a_password_is_the_same_for_the_same_world',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0789'
+describes = 'SIM: without default privileges a later table refuses the reader'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/silos/reader.py'
+old = '          if getattr(silo, "reader_default_privileges", True) else []),'
+new = '          if True else []),'
+tests = [
+    'sim/tests/test_database_realism.py::test_a_table_added_later_is_refused_without_default_privileges',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0790'
+describes = 'SIM: row security with no policy hides every row'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/silos/reader.py'
+old = '''
+    if tables:
+        _run(silo, database, [f'ALTER TABLE'''
+new = '''
+    if False:
+        _run(silo, database, [f'ALTER TABLE'''
+tests = [
+    'sim/tests/test_database_realism.py::test_row_security_with_no_policy_shows_the_reader_nothing_and_says_nothing',
+]
+expect = "fails"

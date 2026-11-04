@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0024'
+describes = "the shop's delivery rule follows the order total"
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/packs/retail.yaml'
+old = '              - if: "goods_total >= 50"'
+new = '              - if: "goods_total >= 0"'
+tests = [
+    'sim/tests/test_retail.py::test_delivery_follows_the_rule_the_shop_wrote_down',
+]
+expect = "fails"

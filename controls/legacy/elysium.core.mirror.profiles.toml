@@ -1,0 +1,39 @@
+[[control]]
+id = 'LEG-0124'
+describes = 'R7: a column going empty is drift'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/profiles.py'
+old = '        if null_now - null_then > NULL_RISE:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_column_drift.py::TestTheRules::test_a_column_going_empty_is_drift',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0125'
+describes = 'R7: a collapse in distinct values is drift'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/profiles.py'
+old = '            if abs(ratio - 1) > DISTINCT_CHANGE:'
+new = '            if False:'
+tests = [
+    'tests/unit/test_column_drift.py::TestTheRules::test_a_collapse_in_distinct_values_is_drift',
+    'tests/unit/test_column_drift.py::TestARealSync::test_a_column_that_collapsed_is_reported',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0126'
+describes = 'R7: a shifted average is drift'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/profiles.py'
+old = '            if sigmas > MEAN_SIGMAS:'
+new = '            if False:'
+tests = [
+    'tests/unit/test_column_drift.py::TestTheRules::test_a_shifted_average_is_drift',
+]
+expect = "fails"

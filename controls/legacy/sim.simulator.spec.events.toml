@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0044'
+describes = 'an emission has exactly one destination'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/spec/events.py'
+old = '    if len(named) > 1:'
+new = '    if False:'
+tests = [
+    'sim/tests/test_events.py::test_an_emission_has_exactly_one_destination',
+]
+expect = "fails"

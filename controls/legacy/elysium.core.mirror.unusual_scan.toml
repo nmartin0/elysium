@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0680'
+describes = 'UNUSUAL: each compartment is judged on its own'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/unusual_scan.py'
+old = '        by_compartment.setdefault(compartment, []).append(row)'
+new = '        by_compartment.setdefault(None, []).append(row)'
+tests = [
+    'tests/integration/test_unusual_records.py::test_found_at_the_sync_and_judged_within_each_compartment',
+]
+expect = "fails"

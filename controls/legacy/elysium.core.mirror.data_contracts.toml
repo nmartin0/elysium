@@ -1,0 +1,42 @@
+[[control]]
+id = 'LEG-0240'
+describes = 'R16: a reverse link is not a column of the contract'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/data_contracts.py'
+old = '''
+        if info.get("type") == "link" and is_reverse_link(info):
+            continue'''
+new = '''
+        if False:
+            continue'''
+tests = [
+    'tests/unit/test_data_contracts.py::TestTheMapping::test_a_reverse_link_is_not_a_column',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0241'
+describes = 'R16: a decimal is promised at the scale gold writes'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/data_contracts.py'
+old = '        physical = f"decimal({DECIMAL_PRECISION}, {DECIMAL_SCALE})"'
+new = '        physical = "decimal(38, 2)"'
+tests = [
+    'tests/unit/test_data_contracts.py::TestTrueOfWhatGoldWrote::test_every_column_and_type_the_contract_promises_is_in_gold',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0242'
+describes = 'R16: the contract version is a digest of the declaration'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/data_contracts.py'
+old = '    canonical = json.dumps(_plain(type_def), sort_keys=True, default=str)'
+new = '    canonical = "fixed"'
+tests = [
+    'tests/unit/test_data_contracts.py::TestTheMapping::test_the_version_changes_with_the_declaration_and_only_then',
+]
+expect = "fails"

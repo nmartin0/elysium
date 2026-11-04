@@ -1,0 +1,38 @@
+[[control]]
+id = 'LEG-0418'
+describes = 'R62: a merge store from before provenance still reads'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/identity_decisions.py'
+old = '        return connection_with_schema(self._database, SCHEMA, migrations=_MIGRATIONS)'
+new = '        return connection_with_schema(self._database, SCHEMA)'
+tests = [
+    'tests/unit/test_inference_wiring.py::TestWhatProducedIt::test_a_store_from_before_provenance_still_reads',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0444'
+describes = 'R13: a merge proposal naming an erased record goes'
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/core/identity_decisions.py'
+old = '            doomed = [(row["proposal_id"],) for row in rows'
+new = '            doomed = [(row["proposal_id"],) for row in rows if False'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_merge_proposal_naming_them_goes_with_its_decisions',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0446'
+describes = 'R58: approved neighbours are pulled into the group'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/identity_decisions.py'
+old = '        for left, right in [*pairs, (proposal.left_id, proposal.right_id)]:'
+new = '        for left, right in [(proposal.left_id, proposal.right_id)]:'
+tests = [
+    'tests/unit/test_identity_decisions_group.py::test_an_approved_neighbour_is_pulled_in',
+]
+expect = "fails"

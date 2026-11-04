@@ -1,0 +1,51 @@
+[[control]]
+id = 'LEG-0448'
+describes = 'R57: a rejection shown pre-selected is not calibration evidence'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/match_calibration.py'
+old = '            if score >= float(auto):'
+new = '            if False:'
+tests = [
+    'tests/unit/test_match_calibration.py::TestWhatCountsAsEvidence::test_a_rejection_that_was_pre_selected_does_not_count',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0449'
+describes = 'R57: a rejection scored under other weights is not evidence'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/match_calibration.py'
+old = '            if scoring_key(_provenance(proposal)) != key:'
+new = '            if False:'
+tests = [
+    'tests/unit/test_match_calibration.py::TestWhatCountsAsEvidence::test_a_rejection_scored_under_other_weights_does_not_count',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0450'
+describes = 'R57: too few rejections is uncalibrated'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/match_calibration.py'
+old = '    if len(reference) < needed:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_match_calibration.py::TestWhatCountsAsEvidence::test_too_few_rejections_is_uncalibrated_and_selects_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0451'
+describes = "R57: Benjamini-Hochberg's bar falls with the number waiting"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/match_calibration.py'
+old = '        if p <= rank * alpha / m:'
+new = '        if p <= alpha:'
+tests = [
+    'tests/unit/test_match_calibration.py::TestWhatCountsAsEvidence::test_more_waiting_pairs_need_more_rejections',
+]
+expect = "fails"

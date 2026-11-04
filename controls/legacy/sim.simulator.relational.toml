@@ -1,0 +1,38 @@
+[[control]]
+id = 'LEG-0037'
+describes = 'verification compares column types, not just names'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/relational.py'
+old = '        if got.type is not want.type:'
+new = '        if False:'
+tests = [
+    'sim/tests/test_relational.py::test_verification_notices_a_column_whose_type_changed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0038'
+describes = "verification compares a decimal's precision"
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/relational.py'
+old = '        if want.type is ColumnType.DECIMAL and ('
+new = '        if False and ('
+tests = [
+    'sim/tests/test_relational.py::test_verification_notices_a_decimal_that_lost_its_pence',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0792'
+describes = 'SIM: zero dates are written where configured'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/relational.py'
+old = '    if value is None and getattr(silo, "zero_dates", False):'
+new = '    if False:'
+tests = [
+    'sim/tests/test_database_realism.py::test_the_business_writes_zero_dates_where_it_has_none',
+]
+expect = "fails"

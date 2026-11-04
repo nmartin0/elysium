@@ -1,0 +1,33 @@
+[[control]]
+id = 'LEG-0128'
+describes = 'R11: a dry run deletes nothing'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/remove_orphan_files.py'
+old = '''
+            if write:
+'''
+new = '''
+            if True:
+'''
+tests = [
+    'tests/unit/test_orphan_files_are_reclaimed.py::test_a_dry_run_reports_and_deletes_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0129'
+describes = 'R11: nothing is swept during a sync'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/remove_orphan_files.py'
+old = '''
+        if not acquired:
+'''
+new = '''
+        if False:
+'''
+tests = [
+    'tests/unit/test_orphan_files_are_reclaimed.py::test_nothing_is_touched_while_a_sync_holds_the_lock',
+]
+expect = "fails"

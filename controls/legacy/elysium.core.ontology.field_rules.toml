@@ -1,0 +1,42 @@
+[[control]]
+id = 'LEG-0329'
+describes = 'R29: a strict majority holds only the rows that disagree with it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_rules.py'
+old = '        if counts[majority] * 2 > len(members):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_dependencies_across_rows.py::TestTheCheck::test_the_minority_against_a_strict_majority_is_named',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0330'
+describes = 'R29: an empty determinant agrees with nothing'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_rules.py'
+old = '''
+        if any(part is None for part in key):
+            continue'''
+new = '''
+        if False:
+            continue'''
+tests = [
+    'tests/unit/test_dependencies_across_rows.py::TestTheCheck::test_an_empty_determinant_or_dependent_is_not_a_disagreement',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0331'
+describes = 'R29: a dependency over a link is refused at load'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_rules.py'
+old = '                if fields[field_name].get("type") == "link" or is_computed(fields[field_name]):'
+new = '                if False:'
+tests = [
+    'tests/unit/test_dependencies_across_rows.py::TestRefusedAtLoad::test_a_dependency_that_could_never_be_checked',
+]
+expect = "fails"

@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0404'
+describes = 'Storage: only a CRYPT- device-mapper target counts as encrypted'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/storage_encryption.py'
+old = '    if uuid.is_file() and uuid.read_text().startswith("CRYPT-"):'
+new = '    if uuid.is_file():'
+tests = [
+    'tests/unit/test_encrypted_backups.py::TestTheVolumeCheck::test_a_plain_device_is_unknown_and_warned',
+]
+expect = "fails"

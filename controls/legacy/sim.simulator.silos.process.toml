@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0003'
+describes = 'a process that cannot be signalled counts as running'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/silos/process.py'
+old = '    except PermissionError:'
+new = '    except NotImplementedError:'
+tests = [
+    'sim/tests/test_postgres_silo.py::test_a_process_that_cannot_be_signalled_counts_as_running',
+]
+expect = "fails"

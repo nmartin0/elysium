@@ -346,3 +346,82 @@ def test_a_retired_control_does_not_count_toward_coverage(tree):
     tree({"core/old.py": "pass\n"}, {"api/A.toml": controls})
 
     assert cc.main(["--coverage"]) == 1
+
+
+# --- the real controls --------------------------------------------------------
+
+@pytest.fixture
+def real():
+    """The repository's own controls, not a temporary tree (the tree fixture undoes its patches)."""
+    return cc
+
+
+def test_every_declared_break_matches_exactly_once(real):
+    # A break that matches nothing runs the UNMODIFIED code and passes, which has
+    # happened by hand in this project more than once. The anchor is the text, not
+    # the path: a break now living in another file fails here only so that the
+    # stale path is seen, with the one-command fix in the message.
+    resolved = real.resolve_all(real.load_controls())
+
+    moved = [f"  {c.path} -> {p[0]}  ({c.id})" for c, s, p in resolved if s == real.MOVED]
+    lost = [f"  {c.path}: {s}  ({c.id})" for c, s, p in resolved if s in (real.RETIRED, real.AMBIGUOUS)]
+    message = []
+    if moved:
+        message.append(f"{len(moved)} control(s) MOVED; run "
+                       f"`python tools/check_controls.py --rewrite-paths`:\n" + "\n".join(moved))
+    if lost:
+        message.append("controls whose break matches nothing or too much:\n" + "\n".join(lost))
+    assert not message, "\n".join(message)
+
+
+def test_there_are_controls_to_run(real):
+    # A list that has quietly emptied would pass every assertion above.
+    controls = real.load_controls()
+    assert len(controls) >= 1000
+    assert len({c.describes for c in controls}) == len(controls)
+
+
+def _resolves(root, test_id: str) -> str | None:
+    """None if the id names something that exists, else why not.
+
+    By AST rather than by running pytest, so checking every id costs milliseconds:
+    the file exists, and each `::` part is a function or class defined (nested for
+    the parts after the first) in it. A parametrization suffix is dropped.
+    """
+    import ast
+    import re
+
+    path, *parts = test_id.split("::")
+    if not parts:
+        return "no ::name"
+    parts[-1] = re.sub(r"\[.*\]$", "", parts[-1])
+    file = root / path
+    if not file.is_file():
+        return f"{path} does not exist"
+    body = ast.parse(file.read_text()).body
+    for name in parts:
+        found = next((node for node in body
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                      and node.name == name), None)
+        if found is None:
+            return f"{name} is not defined in {path}"
+        body = found.body
+    return None
+
+
+def test_every_test_a_control_cites_exists(real):
+    missing = [f"{c.id}: {test_id} ({why})"
+               for c in real.load_controls() for test_id in c.tests
+               if (why := _resolves(real.ROOT, test_id)) is not None]
+    assert not missing, "controls citing tests that do not exist:\n" + "\n".join(missing)
+
+
+def test_the_resolver_notices_a_missing_function_class_and_file(real):
+    # Its own control: a resolver that answered None for everything would make the
+    # test above pass for ever.
+    me = "tests/unit/test_check_controls.py"
+    assert _resolves(real.ROOT, f"{me}::test_there_are_controls_to_run") is None
+    assert _resolves(real.ROOT, f"{me}::test_nothing_of_the_kind") is not None
+    assert _resolves(real.ROOT, f"{me}::NoSuchClass::test_x") is not None
+    assert _resolves(real.ROOT, "tests/unit/no_such_file.py::test_x") is not None
+    assert _resolves(real.ROOT, me) is not None

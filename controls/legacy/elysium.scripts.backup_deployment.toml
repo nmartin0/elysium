@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0403'
+describes = 'Backups: without a key the command refuses rather than writing plain'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/backup_deployment.py'
+old = '        if not key_file:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_encrypted_backups.py::TestTheCommands::test_without_a_key_it_refuses_rather_than_writing_plain',
+]
+expect = "fails"

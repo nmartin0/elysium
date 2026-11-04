@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0252'
+describes = 'ZOO-11: a new deployment from the template quarantines rows'
+invariant = 'none'
+kind = 'semantic'
+path = 'templates/config.yaml'
+old = 'on_type_mismatch: quarantine'
+new = '# on_type_mismatch: quarantine'
+tests = [
+    'tests/unit/test_template_is_a_valid_deployment.py::test_a_new_deployment_starts_on_the_new_installation_defaults',
+]
+expect = "fails"

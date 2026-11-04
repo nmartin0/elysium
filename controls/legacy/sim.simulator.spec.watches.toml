@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0046'
+describes = 'a watch is checked against the schema at load'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/spec/watches.py'
+old = '        if column is None:'
+new = '        if False:'
+tests = [
+    'sim/tests/test_watches.py::test_a_watch_naming_something_that_is_not_there_is_refused',
+]
+expect = "fails"

@@ -1,0 +1,127 @@
+[[control]]
+id = 'LEG-0265'
+describes = 'ZOO-15: an exactly whole exponent-form value is an integer'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '    if isinstance(value, str) and _SCIENTIFIC.match(value.strip()):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestExponentFormIntegers::test_an_exactly_whole_one_loads',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0266'
+describes = "ZOO-22: a declared silo's Excel serials are dates"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '    if excel_dates and data_type in _TEMPORAL and _EXCEL_SERIAL.match(str(value).strip()):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestExcelDateSerials::test_through_a_real_sync',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0319'
+describes = 'PA001-F3: a whole number written with a point is read as an integer'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '    if isinstance(value, str) and _DECIMAL_POINT.match(value.strip()):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_whole_numbers_however_written.py::test_a_whole_number_is_read_however_it_is_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0320'
+describes = 'PA001-F3: a fractional value is refused, never truncated'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '''
+        if value != int(value):
+            raise ValueError(f"{value!r} is not a whole number.")'''
+new = '''
+        if False:
+            raise ValueError(f"{value!r} is not a whole number.")'''
+tests = [
+    'tests/unit/test_whole_numbers_however_written.py::test_a_fraction_is_refused_not_truncated',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0352'
+describes = 'Review: Decimal NaN and Infinity are refused as values, not crashes'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '''
+        if not finite:
+            raise ValueError(f"{value!r} is not a whole number.")'''
+new = '''
+        if False:
+            raise ValueError(f"{value!r} is not a whole number.")'''
+tests = [
+    'tests/unit/test_whole_numbers_however_written.py::test_a_fraction_is_refused_not_truncated',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0634'
+describes = 'PREDICT: a prediction is computed, never read from a source'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '    return "derived" in field or "enrich" in field or "predict" in field'
+new = '    return "derived" in field or "enrich" in field'
+tests = [
+    'tests/unit/test_predictions.py::TestAComputedField::test_it_is_computed',
+    'tests/unit/test_predictions.py::TestAComputedField::test_the_sync_never_asks_the_source_for_it',
+    'tests/unit/test_predictions.py::TestAComputedField::test_meaning_is_never_embedded_from_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0797'
+describes = "TYPES: a declared silo's zero dates are read as empty"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '    if zero_dates and data_type in _TEMPORAL and is_zero_date(value):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestZeroDates::test_through_a_real_sync_and_the_refusal_says_how',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1082'
+describes = 'retype: large_string and string are the same type to the rebuild check'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '    pairs = {("string", "large_string"), ("binary", "large_binary")}'
+new = '    pairs: set = set()'
+tests = [
+    'tests/unit/test_retype.py::TestWhichSilverTablesNeedARebuild::test_large_string_is_string_so_an_unchanged_text_column_never_asks_for_a_rebuild',
+    'tests/unit/test_a_declared_type_can_change.py::TestAnUnchangedDeclaration::test_a_second_sync_is_fine',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1083'
+describes = 'retype: a column on one side only is not a type change'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/field_types.py'
+old = '            if field.name in have and not same_arrow_type(have[field.name], field.type)]'
+new = '            if not same_arrow_type(have.get(field.name), field.type)]'
+tests = [
+    'tests/unit/test_retype.py::TestWhichSilverTablesNeedARebuild::test_a_column_on_one_side_only_is_a_new_column_not_a_type_change',
+]
+expect = "fails"

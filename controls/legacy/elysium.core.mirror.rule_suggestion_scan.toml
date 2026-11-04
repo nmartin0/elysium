@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0416'
+describes = 'R31: a value the schema already nulls reads as declared'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/rule_suggestion_scan.py'
+old = '            handled = item["value"] in ((field.get("standardise") or {}).get("null_if") or ())'
+new = '            handled = False'
+tests = [
+    'tests/unit/test_rule_suggestions.py::TestTheScan::test_a_value_the_schema_already_nulls_is_declared',
+]
+expect = "fails"

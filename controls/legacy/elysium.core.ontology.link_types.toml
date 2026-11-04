@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0949'
+describes = 'DEPRECATION: a link carries its effective status on both ends'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/link_types.py'
+old = '            "status": None if status == "active" else status,'
+new = '            "status": None,'
+tests = [
+    'tests/unit/test_deprecation.py::TestALinkTakesTheMostRestrictiveStatus::test_a_deprecated_type_deprecates_its_links_and_says_which_type',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0951'
+describes = 'DEPRECATION: link types are checked at load'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/link_types.py'
+old = '    validate_deprecation(f"Link type {name!r}", name, link, link_types, "link type")'
+new = '    pass'
+tests = [
+    'tests/unit/test_deprecation.py::TestTheBlockOnATypeAndALink::test_a_link_names_only_a_link_that_exists',
+]
+expect = "fails"

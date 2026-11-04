@@ -1,0 +1,81 @@
+[[control]]
+id = 'LEG-0576'
+describes = 'ENRICH-VOTE: the vote is chosen only when strictly better on the examples'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/enrichment_compiler.py'
+old = 'if _score(vote_on_train) > _score(best_on_train):'
+new = 'if _score(vote_on_train) >= _score(best_on_train):'
+tests = [
+    'tests/unit/test_enrichment_compiler.py::test_a_vote_no_better_than_the_best_single_set_is_not_chosen',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0577'
+describes = 'ENRICH-VOTE: a set no better than a coin has no vote'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/enrichment_compiler.py'
+old = 'if result["covered"] and weight_of(result) > 0),'
+new = 'if result["covered"]),'
+tests = [
+    'tests/unit/test_enrichment_compiler.py::test_the_vote_is_of_sets_better_than_even_odds_heaviest_first',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0578'
+describes = "ENRICH-VOTE: the shown score is the chosen recipe's, on rows neither saw"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/enrichment_compiler.py'
+old = 'held_out = judge(chosen, test)'
+new = 'held_out = judge(best_rules, test)'
+tests = [
+    'tests/unit/test_enrichment_compiler.py::test_sets_that_each_know_one_answer_are_combined_when_that_is_better',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0583'
+describes = "EXTRACT: a model's sample answer must be copied from the record"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/enrichment_compiler.py'
+old = '    if not any(_folded(value) in _folded(text) for text in record.values() if text):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_enrichment_compiler.py::test_an_extracted_label_must_be_copied_from_the_record_and_be_its_type',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0584'
+describes = "EXTRACT: a model's sample answer must be of the field's type"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/enrichment_compiler.py'
+old = '''
+    if typed(value, enrichment.extract, locale) is None:
+        return UNUSABLE'''
+new = '''
+    if False:
+        return UNUSABLE'''
+tests = [
+    'tests/unit/test_enrichment_compiler.py::test_an_extracted_label_must_be_copied_from_the_record_and_be_its_type',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0585'
+describes = 'EXTRACT: rules are scored on the value as gold will type it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/agent/enrichment_compiler.py'
+old = '            value = typed(value, extract, locale)'
+new = '            pass'
+tests = [
+    'tests/unit/test_enrichment_compiler.py::test_a_span_that_does_not_convert_is_not_an_answer',
+]
+expect = "fails"

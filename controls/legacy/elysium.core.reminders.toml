@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0525'
+describes = 'REMINDERS: a reminder that could not be written is retried'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/reminders.py'
+old = '''
+    if written is None:
+        raise RuntimeError'''
+new = '''
+    if False:
+        raise RuntimeError'''
+tests = [
+    'tests/unit/test_reminders.py::TestWhenItFires::test_a_notice_that_could_not_be_written_is_retried',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0526'
+describes = 'REMINDERS: a disabled owner is not reminded'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/reminders.py'
+old = '    if owner is None or not user_is_active(owner):'
+new = '    if owner is None:'
+tests = [
+    'tests/unit/test_reminders.py::TestWhenItFires::test_a_disabled_owner_is_not_reminded',
+]
+expect = "fails"

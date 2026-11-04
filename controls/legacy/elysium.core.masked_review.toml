@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0070'
+describes = 'a WITHHELD field is not reported as a missing one'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/masked_review.py'
+old = '    if readable and not (left_has_value and right_has_value):'
+new = '    if not (left_has_value and right_has_value):'
+tests = [
+    'tests/unit/test_a_reviewer_sees_verdicts_not_values.py::TestTheVerdictIsAlwaysGiven::test_A_WITHHELD_FIELD_IS_NOT_CALLED_MISSING',
+    'tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestTheReviewerSeesVerdictsNotValues::test_A_FIELD_THE_REVIEWER_MAY_NOT_READ_IS_STILL_WITHHELD',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0455'
+describes = 'R56: a reviewer is shown close, not agree'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/masked_review.py'
+old = '''
+    if agreement == CLOSE:
+        return CLOSE
+'''
+new = ''
+tests = [
+    'tests/unit/test_match_cascade.py::TestTheCloseLevel::test_a_reviewer_is_told_close_not_agree',
+]
+expect = "fails"

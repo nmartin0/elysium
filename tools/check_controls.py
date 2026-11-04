@@ -46,7 +46,7 @@ IN_PROGRESS = ROOT / ".controls-in-progress.json"
 
 KINDS = ("semantic", "mechanical")
 INVARIANTS = tuple(f"I{n}" for n in range(1, 9))
-SEARCH_ROOTS = ("src", "sdk", "sim", "install", "templates", "ui/src", "ui/packages")
+SEARCH_ROOTS = ("src", "sdk", "sim", "install", "templates", "scripts", "tools", "ui/src", "ui/packages")
 SEARCH_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".json", ".yaml", ".yml", ".sql", ".toml", ".sh")
 _SKIP_PARTS = {"node_modules", "__pycache__", ".git", "dist", "build", ".venv"}
 OK, MOVED, RETIRED, AMBIGUOUS = "ok", "MOVED", "RETIRED", "AMBIGUOUS"

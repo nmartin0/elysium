@@ -1,0 +1,122 @@
+[[control]]
+id = 'LEG-0288'
+describes = 'R2: the scheduled full read happens, and sees deletions'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/incremental.py'
+old = '    if now - last_full >= policy.full_read_every:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_incremental_sync.py::TestADeletionWaitsForTheFullRead::test_the_scheduled_full_read_sees_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0290'
+describes = 'R2: --full reads everything'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/incremental.py'
+old = '''
+    if force:
+        return "a full read was asked for"'''
+new = '''
+    if False:
+        return "a full read was asked for"'''
+tests = [
+    'tests/unit/test_incremental_sync.py::TestADeletionWaitsForTheFullRead::test_asking_for_a_full_read_sees_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0291'
+describes = 'R2: a changed cursor column forces a full read'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/incremental.py'
+old = '    if properties.get(CURSOR_PROPERTY) != policy.cursor:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_incremental_sync.py::TestWhenAChangedRowsReadWouldBeWrong::test_a_new_cursor_column_reads_in_full',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0293'
+describes = 'R2: the mark keeps its type'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/incremental.py'
+old = '        "datetime": datetime.fromisoformat, "date": date.fromisoformat, "int": int,'
+new = '        "datetime": str, "date": date.fromisoformat, "int": int,'
+tests = [
+    'tests/unit/test_incremental_sync.py::TestTheMarkKeepsItsType::test_it_round_trips',
+    'tests/unit/test_sqlalchemy_adapter.py::TestItReadsOnlyWhatChanged::test_the_mark_read_back_is_the_mark_sent',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0315'
+describes = 'DEP-2: hypothesis finds a mark that is not the largest value'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/incremental.py'
+old = '        return candidate if candidate > current else current'
+new = '        return candidate'
+tests = [
+    'tests/unit/test_properties.py::test_the_mark_is_the_largest_value_whatever_the_order',
+    'tests/unit/test_incremental_sync.py::TestWhatMutationTestingFound::test_the_mark_is_the_highest_value_not_the_last_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0316'
+describes = 'DEP-2: hypothesis finds a mark that changes type when stored'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/incremental.py'
+old = '''
+    if isinstance(value, int):
+        return json.dumps({"type": "int", "value": value})'''
+new = '''
+    if isinstance(value, int):
+        return json.dumps({"type": "float", "value": value})'''
+tests = [
+    'tests/unit/test_properties.py::test_a_mark_comes_back_as_the_value_and_type_it_went_in_as',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1021'
+describes = 'an incremental declaration for the only table a type reads blocks its removal'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/incremental.py'
+old = '''
+                   if (target.silo_name, target.table_name) not in still_read
+'''
+new = '''
+                   if False
+'''
+tests = [
+    'tests/unit/test_removal.py::TestWhatBlocksAWholeType::test_an_incremental_declaration_for_the_only_table_that_reads_it_blocks',
+    'tests/integration/test_removal_from_the_ui.py::TestASilosIncrementalDeclarationBlocksItsOnlyTable::test_the_blocker_is_named_instead_of_a_generic_unloadable_409',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1022'
+describes = 'a table another type still reads does not block the removal'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/incremental.py'
+old = '''
+                   if (target.silo_name, target.table_name) not in still_read
+'''
+new = '''
+                   if True
+'''
+tests = [
+    'tests/unit/test_removal.py::TestWhatBlocksAWholeType::test_a_table_another_type_still_reads_does_not_block',
+]
+expect = "fails"

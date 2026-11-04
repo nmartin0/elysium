@@ -1,0 +1,72 @@
+[[control]]
+id = 'LEG-0622'
+describes = 'PREDICT: a classified answer is never learned about'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/predicted_fields.py'
+old = '            if field_classifications(answer):'
+new = '            if False:'
+tests = [
+    'tests/unit/test_predictions.py::TestTheDeclaration::test_a_prediction_that_could_not_be_learned_safely_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0623'
+describes = 'PREDICT: a classified input is never learned from'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/predicted_fields.py'
+old = '''
+        labels = field_classifications(source)
+        if labels:'''
+new = '''
+        labels = field_classifications(source)
+        if False:'''
+tests = [
+    'tests/unit/test_predictions.py::TestTheDeclaration::test_a_prediction_that_could_not_be_learned_safely_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0624'
+describes = 'PREDICT: the answer is never an input'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/predicted_fields.py'
+old = '        if name in (field_name, prediction.target):'
+new = '        if name == field_name:'
+tests = [
+    'tests/unit/test_predictions.py::TestTheDeclaration::test_a_prediction_that_could_not_be_learned_safely_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0625'
+describes = 'PREDICT: the id is never an input'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/predicted_fields.py'
+old = '        if name == type_def.get("id_field"):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_predictions.py::TestTheDeclaration::test_a_prediction_that_could_not_be_learned_safely_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0643'
+describes = 'PREDICT: a classified field is never a group'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/predicted_fields.py'
+old = '''
+    if field_classifications(field):
+        raise ValueError(f"{where}: {group_by!r} is classified'''
+new = '''
+    if False:
+        raise ValueError(f"{where}: {group_by!r} is classified'''
+tests = [
+    'tests/unit/test_prediction_proposals.py::TestTheGroupField::test_a_field_that_cannot_group_fairly_is_refused',
+]
+expect = "fails"

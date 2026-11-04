@@ -1,0 +1,16 @@
+[[control]]
+id = 'LEG-0119'
+describes = 'R64: a function gets no short number'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/functions/ontology_access.py'
+old = '''
+    if outcome.scan_truncated:
+        raise ValueError('''
+new = '''
+    if False:
+        raise ValueError('''
+tests = [
+    'tests/unit/test_a_short_count_never_reaches_the_model.py::TestAFunction::test_a_short_count_is_refused',
+]
+expect = "fails"

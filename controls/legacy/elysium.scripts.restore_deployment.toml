@@ -1,0 +1,30 @@
+[[control]]
+id = 'LEG-0225'
+describes = 'R13: a restore keeps the newer register'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/restore_deployment.py'
+old = '''
+    kept = aside / "erasures.db"
+    if kept.exists():'''
+new = '''
+    kept = aside / "erasures.db"
+    if False:'''
+tests = [
+    'tests/unit/test_erasure.py::TestARestore::test_the_register_is_the_newer_one',
+    'tests/unit/test_erasure.py::TestARestore::test_an_older_backup_does_not_bring_them_back',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0395'
+describes = 'E-14: a restore does not bring back a memory about someone erased'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/scripts/restore_deployment.py'
+old = '    forget_beyond_the_mirror(data_dir, register)'
+new = '    pass'
+tests = [
+    'tests/unit/test_erasure.py::TestWhatPeopleRemembered::test_a_restore_does_not_bring_them_back',
+]
+expect = "fails"

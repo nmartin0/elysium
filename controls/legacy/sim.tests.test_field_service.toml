@@ -1,0 +1,14 @@
+[[control]]
+id = 'LEG-0053'
+describes = 'the hygiene check catches a test that asserts over nothing'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/tests/test_field_service.py'
+old = '''
+    assert len(notes) == 6, notes
+'''
+new = ''
+tests = [
+    'sim/tests/test_suite_hygiene.py::test_no_test_asserts_about_every_row_of_nothing',
+]
+expect = "fails"

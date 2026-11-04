@@ -1,0 +1,353 @@
+[[control]]
+id = 'LEG-0057'
+describes = 'a sync takes the single-writer lock'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = 'from elysium.core.mirror.sync_lock import single_writer'
+new = '''
+import contextlib
+@contextlib.contextmanager
+def single_writer(*a, **k):
+    yield'''
+tests = [
+    'tests/unit/test_repair_waits_for_the_sync.py::TestBothWritersUseIt::test_the_sync_takes_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0108'
+describes = 'R12: the sync records the labels'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '        relabelled = record_classifications(sync._catalog, config.schema)'
+new = '        relabelled = []'
+tests = [
+    'tests/unit/test_classifications_propagate.py::TestTheRealSyncRecordsThem::test_the_shipped_labels_reach_bronze_silver_and_gold',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0115'
+describes = 'R66: run_sync carries --accept-deletions to gold'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '                                 unsynced=unsynced, run_id=run_id, accepted=accepted,'
+new = '                                 unsynced=unsynced, run_id=run_id,'
+tests = [
+    'tests/unit/test_accept_deletions_reaches_gold.py::test_the_accepted_deletion_reaches_the_reader',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0117'
+describes = 'R66: an identity-resolved type needs every source accepted'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '    if type_def.get("identity"):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestWhichTablesLicenseAType::test_an_identity_resolved_type_needs_every_source',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0136'
+describes = 'R13 removed types: run_sync records the key columns'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '            record_key_columns(sync._catalog, config.schema)'
+new = '            pass'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestAfterTheTypeIsRemoved::test_erasing_a_customer_reaches_the_removed_types_tables',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0154'
+describes = 'R13 removed types: a sync applies an incomplete erasure again'
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '        if erasures.unpurged() or erasures.incomplete():'
+new = '        if erasures.unpurged():'
+tests = [
+    'tests/integration/test_erasure_after_removal.py::TestWhatTheRegisterAndTheSyncSay::test_every_later_sync_says_so_and_it_clears_when_they_can_be_searched',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0196'
+describes = 'R2 state: a rebuild run does not record that it is rebuilding'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '                    if label in rebuilding:'
+new = '                    if False:'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestTheStateOfTheObject::test_while_the_rebuild_runs_the_table_and_its_type_are_rebuilding_on_the_old_silver',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0237'
+describes = 'R15: a gold type that started also finishes'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '            lineage.emit(FAIL if failed else COMPLETE, f"gold.{object_type}",'
+new = '            lineage.emit(FAIL if failed else START, f"gold.{object_type}",'
+tests = [
+    'tests/unit/test_openlineage_events.py::TestWhatASyncEmits::test_every_job_that_started_finished_with_the_same_run_id',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0274'
+describes = "R4: the run reads each silo's tables inside its snapshot"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '            with _consistent_read(sync.adapters.get(silo_name)) as consistent:'
+new = '            with _consistent_read(None) as consistent:'
+tests = [
+    'tests/unit/test_one_consistent_read_per_silo.py::test_the_run_opens_one_snapshot_per_silo_around_its_tables',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0326'
+describes = 'R18: a type in a link cycle may link to what its partner publishes this run'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '                known[partner] = set(known.get(partner) or ()) | coming'
+new = '                pass'
+tests = [
+    'tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::test_a_new_pair_pointing_at_each_other_publishes_together',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0327'
+describes = 'R18: a cycle partner that did not publish is named'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '    for partner in sorted(not_published & set(leaned_on)):'
+new = '    for partner in sorted(set()):'
+tests = [
+    'tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::test_a_partner_that_is_refused_is_named',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0350'
+describes = 'Review: a cycle partner skipped as stale is not leaned on'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '            if coming is not None and partner not in not_published:'
+new = '            if coming is not None:'
+tests = [
+    'tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::test_a_partner_skipped_as_stale_is_not_leaned_on',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0351'
+describes = 'Review: the cycle warning names only links that were really made'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '            if dangling:'
+new = '            if True:'
+tests = [
+    'tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::test_no_warning_when_no_row_points_at_a_new_id',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0368'
+describes = "PA001-G11: a link target's ids are part of the referrer's inputs"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '''
+            for target in targets if target in known
+'''
+new = '''
+            for target in targets if False
+'''
+tests = [
+    'tests/unit/test_unchanged_gold_is_not_republished.py::TestSomethingChanged::test_a_link_target_that_changed_rebuilds_the_referrer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0374'
+describes = 'PA001-A17: a sync whose bronze copy failed is recorded as degraded, not synced'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '''
+    if getattr(result, "degraded", None):
+        # BEFORE 'unchanged''''
+new = '''
+    if False:
+        # BEFORE 'unchanged''''
+tests = [
+    'tests/unit/test_a_bronze_failure_never_serves_stale_data.py::TestTheAttemptSaysDegraded::test_it_is_recorded_as_degraded_not_synced',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0378'
+describes = 'a link table whose silver has not moved is not copied again'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '        elif stamp is not None and table.properties.get(LINK_SOURCE_PROPERTY) == stamp:'
+new = '        elif False:'
+tests = [
+    'tests/unit/test_gold_serves_many_to_many_links.py::TestALinkTableIsNotRebuiltForNothing::test_an_unchanged_link_table_is_left_alone',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0379'
+describes = 'a changed link table is overwritten in place, never dropped and recreated'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '''
+        else:
+            table.overwrite(silver)
+'''
+new = '''
+        else:
+            sync._catalog.drop_table(identifier)
+            table = sync._catalog.create_table(identifier, schema=silver.schema)
+            table.append(silver)
+'''
+tests = [
+    'tests/unit/test_gold_serves_many_to_many_links.py::TestALinkTableIsNotRebuiltForNothing::test_a_changed_one_is_overwritten_in_place_not_recreated',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0417'
+describes = 'R62: each merge proposal records what produced it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '                       provenance=provenance)'
+new = '                       provenance="")'
+tests = [
+    'tests/unit/test_inference_wiring.py::TestWhatProducedIt::test_each_proposal_carries_its_provenance',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0605'
+describes = 'MEANING: a failure to embed never fails the sync'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = "        except Exception as exc:  # noqa: BLE001 - never the sync's verdict"
+new = "        except ZeroDivisionError as exc:  # noqa: BLE001 - never the sync's verdict"
+tests = [
+    'tests/integration/test_search_by_meaning.py::test_a_failure_to_embed_never_fails_the_sync',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0606'
+describes = 'MEANING: a type no longer declared loses its vectors'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '    for gone in store.declared_types() - set(declared):'
+new = '    for gone in set():'
+tests = [
+    'tests/integration/test_search_by_meaning.py::test_a_type_no_longer_declared_loses_its_vectors',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0651'
+describes = 'PREDICT: approvals ride on the type, so approving one rebuilds gold'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '''
+        type_def = with_approved_predictions(lambda: sync._catalog, config.schema or {},
+                                             object_type, type_def, predictions)'''
+new = '        pass'
+tests = [
+    'tests/integration/test_predicted_fields.py::TestFilling::test_empty_until_approved_then_filled_only_where_unknown',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0685'
+describes = 'UNUSUAL: looked for only when gold changed'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '            print(f"unchanged gold.{object_type}: built from the same inputs as its "'
+new = '''
+            scan_unusual(sync._catalog, config.schema or {}, object_type, unusual)
+            print(f"unchanged gold.{object_type}: built from the same inputs as its "'''
+tests = [
+    'tests/integration/test_unusual_records.py::test_unchanged_gold_keeps_its_flags_and_is_not_scanned_again',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0732'
+describes = 'SOURCES: an absorbed column is recorded on the attempt'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '                               getattr(result, "absorbed_drift", None),'
+new = '                               None,'
+tests = [
+    'tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestAnAbsorbedColumnIsRecorded::test_the_attempt_records_it_beside_its_outcome',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0746'
+describes = 'SOURCES: rows hidden from the sync are recorded on the attempt'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/scripts/run_sync.py'
+old = '                               getattr(result, "hidden_rows", None),'
+new = '                               None,'
+tests = [
+    'tests/unit/test_server_databases_read_safely.py::test_a_sync_carries_the_warning_onto_its_result',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1086'
+describes = 'retype: gold of a type whose silver is refused is skipped, not rebuilt from the old silver'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/run_sync.py'
+old = '''
+        stale = sorted(needed & (unsynced or set()))
+        if stale:'''
+new = '''
+        stale = sorted(needed & (unsynced or set()))
+        if False:'''
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestWhileSilverIsRefused::test_gold_is_neither_rebuilt_nor_changed',
+    'tests/integration/test_retype_from_the_ui.py::TestWhileSilverIsRefused::test_the_sync_says_so_out_loud',
+]
+expect = "fails"

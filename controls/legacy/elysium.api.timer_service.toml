@@ -1,0 +1,117 @@
+[[control]]
+id = 'LEG-0501'
+describes = 'TIMERS: one worker fires, the others do not'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/timer_service.py'
+old = '''
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 0'''
+new = '''
+            pass
+        except BlockingIOError:
+            return 0'''
+tests = [
+    'tests/integration/test_timer_service.py::test_another_worker_firing_means_this_one_does_not',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0502'
+describes = 'TIMERS: a kind nobody handles is dropped, not retried forever'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/timer_service.py'
+old = '''
+                store.done(timer)
+                continue
+            now = clock()'''
+new = '''
+                continue
+            now = clock()'''
+tests = [
+    'tests/integration/test_timer_service.py::test_a_kind_nobody_handles_is_dropped',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0503'
+describes = 'TIMERS: an overdue timer is a short sleep, not a spin'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/timer_service.py'
+old = '    return max(MIN_SLEEP_SECONDS, min(LOOK_SECONDS, upcoming - clock()))'
+new = '    return max(0.0, min(LOOK_SECONDS, upcoming - clock()))'
+tests = [
+    'tests/integration/test_timer_service.py::test_it_sleeps_until_the_earliest_timer_within_bounds',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0517'
+describes = 'LATENESS: a timer past its policy is missed, not run as if on time'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/timer_service.py'
+old = '    if now - latest <= threshold:'
+new = '    if True:'
+tests = [
+    'tests/integration/test_timer_service.py::TestHowLateIsTooLate::test_later_than_its_policy_is_missed_not_run_as_if_on_time',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0518'
+describes = 'LATENESS: under a minute late is never a miss'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/timer_service.py'
+old = '    threshold = max(timer.late_after, ON_TIME_SECONDS)'
+new = '    threshold = timer.late_after'
+tests = [
+    'tests/integration/test_timer_service.py::TestHowLateIsTooLate::test_under_a_minute_late_is_never_a_miss',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0519'
+describes = 'REPEAT: a repeating timer moves on rather than ending'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/timer_service.py'
+old = '''
+    if timer.repeat is None:
+        return None
+    from elysium.core.timer_rules import next_occurrence
+
+    anchor = datetime.fromtimestamp(timer.occurrence_at, UTC)
+    after'''
+new = '''
+    if True:
+        return None
+    from elysium.core.timer_rules import next_occurrence
+
+    anchor = datetime.fromtimestamp(timer.occurrence_at, UTC)
+    after'''
+tests = [
+    'tests/integration/test_timer_service.py::TestARepeatingTimer::test_moves_on_to_its_next_occurrence',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0520'
+describes = 'REPEAT: back from an outage, the latest occurrence still in time is delivered'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/timer_service.py'
+old = '''
+    threshold = max(timer.late_after, ON_TIME_SECONDS)
+    latest = since[-1] if since else timer.occurrence_at'''
+new = '''
+    threshold = max(timer.late_after, ON_TIME_SECONDS)
+    latest = timer.occurrence_at'''
+tests = [
+    'tests/integration/test_timer_service.py::TestARepeatingTimer::test_catches_up_at_most_once_delivering_the_latest_still_in_time',
+]
+expect = "fails"

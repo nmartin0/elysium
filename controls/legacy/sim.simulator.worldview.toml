@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0027'
+describes = "the world view's parameter names match the world's"
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/worldview.py'
+old = '    def database(self, silo_name: str) -> str: ...'
+new = '    def database(self, name: str) -> str: ...'
+tests = [
+    'sim/tests/test_worldview.py::test_the_call_signatures_match',
+]
+expect = "fails"

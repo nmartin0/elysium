@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0121'
+describes = 'R65: once per lapse'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/health_condition.py'
+old = '    if summary is None or store.already_notified(_OVERDUE_KEY, user_id, summary):'
+new = '    if summary is None:'
+tests = [
+    'tests/integration/test_the_sync_is_watched.py::test_once_per_lapse_however_often_the_client_polls',
+]
+expect = "fails"

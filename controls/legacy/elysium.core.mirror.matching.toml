@@ -1,0 +1,46 @@
+[[control]]
+id = 'LEG-0071'
+describes = 'a null comparison is not reported as a disagreement'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/matching.py'
+old = '''
+    if value < 0:
+        return None'''
+new = '''
+    if False:
+        return None'''
+tests = [
+    'tests/unit/test_probabilistic_matching.py::TestANullIsNotADISAGREEMENT::test_a_null_comparison_is_not_compared',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0454'
+describes = "R56: a fuzzy field's close level is reported as close, not agree"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/matching.py'
+old = '        return True if value >= 2 else CLOSE if value == 1 else False'
+new = '        return value > 0'
+tests = [
+    'tests/unit/test_match_cascade.py::TestTheScores::test_a_typo_now_reaches_review',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0456'
+describes = 'R56: fuzzy means one edit unless declared otherwise'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/matching.py'
+old = '''
+DEFAULT_FUZZY_EDITS = 1
+'''
+new = '''
+DEFAULT_FUZZY_EDITS = 2
+'''
+tests = [
+    'tests/unit/test_match_cascade.py::TestTheScores::test_two_edits_are_not_close_by_default',
+]
+expect = "fails"

@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0023'
+describes = "an emitted reference's aggregate is checked at load"
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/spec/references.py'
+old = '        if aggregate not in AGGREGATES:'
+new = '        if False:'
+tests = [
+    'sim/tests/test_pack_loader.py::test_an_emitted_reference_must_name_a_real_aggregate',
+]
+expect = "fails"

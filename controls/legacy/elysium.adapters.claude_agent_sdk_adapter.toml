@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0251'
+describes = 'F-24: an over-long system prompt is refused before the CLI starts'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/claude_agent_sdk_adapter.py'
+old = '        if size >= MAX_ARGUMENT_BYTES:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_claude_agent_sdk_adapter.py::test_a_prompt_past_the_argument_limit_is_refused_by_name',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0423'
+describes = 'AR-5: on the Claude CLI a step schema is enforced with --json-schema'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/claude_agent_sdk_adapter.py'
+old = '            command += ["--json-schema", schema]'
+new = '            command += []'
+tests = [
+    'tests/unit/test_claude_agent_sdk_adapter.py::test_a_schema_is_passed_to_the_cli_to_enforce',
+]
+expect = "fails"

@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0786'
+describes = 'SIM: a non-atomic file is seen half-written'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/silos/filedrop.py'
+old = '            self.place(filename, payload[: max(1, len(payload) // 2)], atomic=False)'
+new = '            self.place(filename, payload, atomic=False)'
+tests = [
+    'sim/tests/test_filedrop_silo.py::test_a_non_atomic_file_is_half_written_until_the_next_tick',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0787'
+describes = 'SIM: Excel drops leading zeros'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/silos/filedrop.py'
+old = '        shown = format(Decimal(text).normalize(), "f")'
+new = '        shown = text'
+tests = [
+    'sim/tests/test_filedrop_silo.py::test_excel_conversions_apply_to_every_cell_but_the_header',
+]
+expect = "fails"

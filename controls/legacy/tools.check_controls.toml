@@ -1,0 +1,19 @@
+[[control]]
+id = 'LEG-1132'
+describes = 'a control fires only when pytest reports a failed test'
+invariant = 'none'
+kind = 'semantic'
+path = 'tools/check_controls.py'
+old = '''
+    if returncode == 1:
+        return FIRES, _PYTEST_EXIT[1]
+'''
+new = '''
+    if returncode != 0:
+        return FIRES, _PYTEST_EXIT[1]
+'''
+tests = [
+    'tests/unit/test_check_controls.py::test_only_a_failed_test_counts_as_firing',
+    'tests/unit/test_check_controls.py::test_a_control_citing_a_missing_test_is_broken_not_firing',
+]
+expect = "fails"

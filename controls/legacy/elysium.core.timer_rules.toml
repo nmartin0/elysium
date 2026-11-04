@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0522'
+describes = "REPEAT: a weekday rule keeps to the owner's clock"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/timer_rules.py'
+old = '        candidate = datetime.combine(day, at, tzinfo=tz).astimezone(UTC)'
+new = '        candidate = datetime.combine(day, at, tzinfo=UTC)'
+tests = [
+    'tests/unit/test_timer_rules.py::TestAWeekdayRule::test_stays_nine_on_the_owners_clock_across_the_spring_change',
+]
+expect = "fails"

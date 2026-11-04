@@ -1,0 +1,1043 @@
+[[control]]
+id = 'LEG-0475'
+describes = 'DEV_UI 13.7: a key off the describing allowlist is refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+        if key not in allowed:
+            raise ConfigEditError(f"{where}'s {key} cannot be edited here.")'''
+new = '''
+        if False:
+            pass'''
+tests = [
+    'tests/unit/test_describing_the_ontology_lines.py::TestTheAllowlist::test_shape_and_access_are_out_of_reach',
+    'tests/integration/test_describing_the_ontology.py::test_security_is_out_of_reach_however_it_is_asked',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0476'
+describes = "DEV_UI 13.7: an edit that would change the file's meaning is refused"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if means != expected:
+        raise ConfigEditError(f"That change could not be made'''
+new = '''
+    if False:
+        raise ConfigEditError(f"That change could not be made'''
+tests = [
+    'tests/unit/test_describing_the_ontology_lines.py::TestTheMeaningCheck::test_a_layout_it_cannot_edit_cleanly_is_refused_not_mangled',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0477'
+describes = 'DEV_UI 13.7: a value running onto lines below goes with it'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '            del lines[at + 1:last + 1]'
+new = '            pass'
+tests = [
+    'tests/unit/test_describing_the_ontology_lines.py::TestOnlyItsLines::test_a_folded_description_is_replaced_whole',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0478'
+describes = 'DEV_UI 13.7: a hash inside a value is not a comment'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '            if plain_yaml.safe_load("k:" + tail[:at]) == {"k": old}:'
+new = '            if True:'
+tests = [
+    'tests/unit/test_describing_the_ontology_lines.py::TestTextThatYamlWouldMisread::test_a_hash_inside_a_quoted_value_is_not_taken_for_a_comment',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0479'
+describes = 'DEV_UI 13.7: a new key goes beside its kind, not under the last field'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if after is not None and parent_line is not None:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_describing_the_ontology_lines.py::TestOnlyItsLines::test_a_new_key_goes_first_in_the_type_not_under_its_last_field',
+    'tests/integration/test_describing_the_ontology.py::test_only_the_changed_lines_differ',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0487'
+describes = 'DEV_UI 13.7 labels: a label has one spelling'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        if not re.match(r"^[a-z][a-z0-9_]*$", label):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_describing_the_ontology_lines.py::TestLabels::test_a_label_has_one_spelling',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0493'
+describes = 'DEV_UI 13.7 restore: files holding connections are named, never shown'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if filename == ONTOLOGY_FILE:
+        return diff(before, after, filename)'''
+new = '''
+    if True:
+        return diff(before, after, filename)'''
+tests = [
+    'tests/integration/test_putting_a_version_back.py::TestWhatItShows::test_files_that_hold_connections_are_named_not_shown',
+    'tests/integration/test_putting_a_version_back.py::test_an_approved_restore_does_not_return_lines_it_never_showed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0854'
+describes = "NEW FIELD: it goes after the block's last line, not at its top"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    at = _last_line(lines, key_line, after_comments)
+    lines[at + 1:at + 1] = block'''
+new = '    lines[key_line + 1:key_line + 1] = block'
+tests = [
+    'tests/unit/test_new_fields.py::TestTheLinesItWrites::test_a_field_goes_after_the_last_one_and_before_what_follows_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0855'
+describes = "NEW FIELD: the type's own id is taken"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = ' or name == type_def.get("id_field")'
+new = ''
+tests = [
+    'tests/unit/test_new_fields.py::TestWhatItRefuses::test_it_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0856'
+describes = 'NEW FIELD: the same field twice in one request is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+        fields[name] = declared
+'''
+new = '''
+        pass
+'''
+tests = [
+    'tests/unit/test_new_fields.py::TestWhatItRefuses::test_the_same_field_twice',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0857'
+describes = 'NEW FIELD: a data type off the list is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        if data_type not in data_types:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_new_fields.py::TestWhatItRefuses::test_it_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0858'
+describes = 'NEW FIELD: a name that is not lowercase-identifier shaped is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = 'r"^[a-z][a-z0-9_]{0,62}$"'
+new = 'r"^.*$"'
+tests = [
+    'tests/unit/test_new_fields.py::TestWhatItRefuses::test_it_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0859'
+describes = 'NEW FIELD: a key that is not on the list is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+        if unknown:
+            raise ConfigEditError(f"{', '.join(unknown)} cannot'''
+new = '''
+        if False:
+            raise ConfigEditError(f"{', '.join(unknown)} cannot'''
+tests = [
+    'tests/unit/test_new_fields.py::TestWhatItRefuses::test_it_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0860'
+describes = 'NEW FIELD: more than a migration is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if len(additions) > MAX_NEW_FIELDS:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_fields.py::TestWhatItRefuses::test_more_than_a_migration',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0861'
+describes = 'NEW FIELD: a column named like the field is not written'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+        if column is not None and column == name:
+            column = None'''
+new = '        pass'
+tests = [
+    'tests/unit/test_new_fields.py::TestTheSourceColumn::test_a_column_named_like_the_field_is_not_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0862'
+describes = 'NEW FIELD: with one file the column goes in the field'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        if column is not None and bindings is None:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_new_fields.py::TestTheSourceColumn::test_it_goes_in_the_field_when_the_deployment_has_one_file',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0863'
+describes = 'NEW FIELD: a type the bindings do not bind is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '            if object_type not in (expected_bindings.get("object_types") or {}):'
+new = '            if False:'
+tests = [
+    'tests/unit/test_new_fields.py::TestTheSourceColumn::test_a_type_the_bindings_do_not_bind_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0864'
+describes = 'NEW FIELD: a label that is not label-shaped is refused'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        if not re.match(r"^[a-z][a-z0-9_]*$", label):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_new_fields.py::TestWhatItRefuses::test_it_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0865'
+describes = 'NEW FIELD: a type with no fields block is refused, not guessed at'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+        if not isinstance(fields, dict):
+            raise ConfigEditError(f"{object_type} has no `fields:` block'''
+new = '''
+        if False:
+            raise ConfigEditError(f"{object_type} has no `fields:` block'''
+tests = [
+    'tests/unit/test_new_fields.py::TestWhatItRefuses::test_a_type_with_no_fields_block',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0901'
+describes = 'NEW TYPE: inherit needs a source that declares a rule'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        if silos.get(silo) is None:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_new_type.py::TestItsRowRuleIsAlwaysChosen::test_inherit_needs_a_source_that_declares_one',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0902'
+describes = 'NEW TYPE: a field rule must name one of its fields'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = ' and security["field"] in declared_fields:'
+new = ':'
+tests = [
+    'tests/unit/test_new_type.py::TestItsRowRuleIsAlwaysChosen::test_a_field_rule_must_be_one_of_the_fields',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0903'
+describes = 'NEW TYPE: its row rule has no default'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '    elif security == "unrestricted":'
+new = '    elif security == "unrestricted" or security is None:'
+tests = [
+    'tests/unit/test_new_type.py::TestItsRowRuleIsAlwaysChosen::test_there_is_no_default',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0904'
+describes = 'NEW TYPE: a taken name is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if name in types:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_type.py::TestWhatItRefuses::test_it_refuses',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0905'
+describes = 'NEW TYPE: the source must exist'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if not isinstance(silo, str) or silo not in silos:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_type.py::TestWhatItRefuses::test_it_refuses',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0906'
+describes = "NEW TYPE: no field may take the id's name"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '        if fname in declared_fields or fname == id_field:'
+new = '        if fname in declared_fields:'
+tests = [
+    'tests/unit/test_new_type.py::TestWhatItRefuses::test_it_refuses',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0907'
+describes = 'NEW TYPE: the title must be one of its fields'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if title_field is not None and title_field not in declared_fields and title_field != id_field:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_type.py::TestWhatItRefuses::test_it_refuses',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0908'
+describes = 'NEW TYPE: it is listed to everyone only when asked'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if discoverable:
+        declared_type'''
+new = '''
+    if True:
+        declared_type'''
+tests = [
+    'tests/unit/test_new_type.py::TestTheLinesItWrites::test_a_type_is_not_listed_unless_asked',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0909'
+describes = 'NEW TYPE: with no bindings file the source sits in the type'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        body = body[:1] + ["storage:"] + storage_lines + body[1:]'
+new = '        pass'
+tests = [
+    'tests/unit/test_new_type.py::TestTheLinesItWrites::test_with_no_bindings_file_the_source_sits_in_the_type',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0910'
+describes = "NEW TYPE: it lands after the previous type's own trailing note"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = 'name, body, after_comments=True)'
+new = 'name, body, after_comments=False)'
+tests = [
+    'tests/unit/test_new_type.py::TestWhereItLands::test_the_comment_that_ends_the_previous_type_stays_with_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0911'
+describes = 'NEW TYPE: a column named like its field is not bound'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+        if column == fname:
+            column = None'''
+new = '        pass'
+tests = [
+    'tests/unit/test_new_type.py::TestTheLinesItWrites::test_a_column_named_like_its_field_is_not_bound_twice',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0919'
+describes = 'NEW LINK: a taken link name is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if name in (links or {}):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0920'
+describes = 'NEW LINK: a name either type already uses is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if api_name in taken.setdefault(object_type, set()):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0921'
+describes = 'NEW LINK: both types must exist'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if not isinstance(object_type, str) or object_type not in types:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0922'
+describes = 'NEW LINK: the relationship must be one of the three'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if cardinality not in LINK_CARDINALITIES:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0923'
+describes = 'NEW LINK: many to many is not backed by a column'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        if "foreign_key_column" in addition:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0924'
+describes = 'NEW LINK: a column-backed link has no join table'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        if "join_table" in addition:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_foreign_key_link',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0925'
+describes = "NEW LINK: it lands after the previous link's trailing note"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+[line[2:] for line in lines],
+                               after_comments=True)'''
+new = '''
+[line[2:] for line in lines],
+                               after_comments=False)'''
+tests = [
+    'tests/unit/test_new_link.py::TestTheLinesItWrites::test_a_link_goes_after_the_last_one_and_its_trailing_note',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0926'
+describes = 'NEW LINK: a file with no links yet gets the block'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if links is None:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_new_link.py::TestTheLinesItWrites::test_a_file_with_no_links_yet_gets_the_block',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0967'
+describes = 'a deprecation without a reason is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if not isinstance(reason, str) or not reason.strip():
+        raise ConfigEditError(f"Say why'''
+new = '''
+    if False:
+        raise ConfigEditError(f"Say why'''
+tests = [
+    'tests/unit/test_deprecate_edit.py::test_a_refusal_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0968'
+describes = "a deprecation's replacement is checked as the loader checks it"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '        check(where, name, declared, siblings,'
+new = '        (lambda *a: None)(where, name, declared, siblings,'
+tests = [
+    'tests/unit/test_deprecate_edit.py::test_a_refusal_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0969'
+describes = 'a field a link made is deprecated as its link type, not as a field'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+
+            if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):'''
+new = '''
+
+            if False:'''
+tests = [
+    'tests/unit/test_deprecate_edit.py::test_a_field_a_link_made_is_not_in_the_file_so_the_link_type_is_the_thing_to_deprecate',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0970'
+describes = 'restoring takes the status line out too'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+        edited = _edit_line(edited, [*path, "status"], None, ONTOLOGY_FILE)
+        declared.pop(DEPRECATION, None)'''
+new = '        declared.pop(DEPRECATION, None)'
+tests = [
+    'tests/unit/test_deprecate_edit.py::test_making_it_active_again_takes_both_lines_out',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0979'
+describes = 'a flow-style body is refused rather than crashing the route'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+                            after=("status",))
+    except RuamelYAMLError:'''
+new = '''
+                            after=("status",))
+    except Exception as _never:  # noqa: BLE001 - deliberately never matches, for the control
+        raise _never'''
+tests = [
+    'tests/unit/test_deprecate_edit.py::test_a_flow_style_body_is_refused_rather_than_breaking_the_file',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0993'
+describes = 'a binding goes with its field'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    root = ["object_types"] if "object_types" in expected_bindings else []
+'''
+new = '''
+    return edited, bindings
+    root = ["object_types"] if "object_types" in expected_bindings else []
+'''
+tests = [
+    'tests/unit/test_remove_edit.py::TestBindings::test_the_binding_goes_with_its_field',
+    'tests/unit/test_remove_edit.py::TestBindings::test_the_last_binding_takes_the_empty_fields_block_with_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0994'
+describes = 'an entry inside a braced mapping is refused, not edited'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if any(parent.fa.flow_style() for parent in chain):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_remove_edit.py::test_an_entry_inside_a_braced_mapping_is_refused_with_a_message',
+    'tests/unit/test_remove_edit.py::TestBindings::test_a_binding_inside_a_braced_mapping_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0995'
+describes = 'the only field of a type is not removed, leaving `fields:` empty'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if len(node) == 1:
+        if not drop_empty_parent:'''
+new = '''
+    if False:
+        if not drop_empty_parent:'''
+tests = [
+    'tests/unit/test_remove_edit.py::test_the_only_field_of_a_type_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0996'
+describes = 'the last link type takes link_types: with it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '        return _delete_entry(text, path[:-1], filename, where, drop_empty_parent=True)'
+new = '        raise ConfigEditError("emptied")'
+tests = [
+    'tests/unit/test_remove_edit.py::test_the_last_link_type_takes_link_types_with_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0997'
+describes = "a removal never deletes a comment line (a header or a neighbour's commented-out entry stays)"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '    lines[first:last + 1] = [line for line in lines[first:last + 1] if line.lstrip().startswith("#")]'
+new = '''
+    while first > 0 and lines[first - 1].strip().startswith("#"):
+        first -= 1
+    del lines[first:last + 1]'''
+tests = [
+    'tests/unit/test_remove_edit.py::test_a_comment_above_a_removed_field_stays_because_it_may_belong_to_something_else',
+    'tests/unit/test_remove_edit.py::test_a_link_type_goes_and_the_comment_above_it_stays',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0998'
+describes = 'a removal never deletes a comment line inside the entry it removes'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '    lines[first:last + 1] = [line for line in lines[first:last + 1] if line.lstrip().startswith("#")]'
+new = '    del lines[first:last + 1]'
+tests = [
+    'tests/unit/test_remove_edit.py::TestRemovingAWholeType::test_every_comment_line_stays_including_the_ones_inside_the_type',
+    'tests/unit/test_remove_edit.py::TestRemovingAWholeType::test_a_comment_inside_a_removed_field_stays_too',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0999'
+describes = 'a field that arrives through a merge key is refused cleanly, not a KeyError'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        return key in parent.lc.data'
+new = '        return True'
+tests = [
+    'tests/unit/test_remove_edit.py::TestWhatComesInThroughAMerge::test_a_field_that_arrives_through_a_merge_key_is_refused_not_a_500',
+    'tests/unit/test_remove_edit.py::TestWhatComesInThroughAMerge::test_a_binding_that_arrives_through_a_merge_is_refused_too',
+    'tests/unit/test_remove_edit.py::TestRemovingAWholeType::test_a_type_that_comes_in_through_a_merge_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1000'
+describes = 'the only key of the root is refused, not an IndexError'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if not path:
+        raise ConfigEditError(f"{where} is the only thing in'''
+new = '''
+    if False:
+        raise ConfigEditError(f"{where} is the only thing in'''
+tests = [
+    'tests/unit/test_remove_edit.py::TestWhatComesInThroughAMerge::test_the_only_key_of_the_root_is_refused_not_an_index_error',
+    'tests/unit/test_remove_edit.py::TestRemovingAWholeType::test_the_only_entry_in_a_bindings_file_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1009'
+describes = 'a field written over several lines is removed whole'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    last = _last_line(lines, first)
+    # A comment line INSIDE'''
+new = '''
+    last = first
+    # A comment line INSIDE'''
+tests = [
+    'tests/unit/test_remove_edit.py::test_a_field_written_over_several_lines_goes_whole_with_its_inline_comment',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1010'
+describes = 'a field a link made is removed as its link type, not as a field'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+
+    if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):
+        raise ConfigEditError(
+            f"{object_type} has no field {field_name!r} written in {ONTOLOGY_FILE}. A field that a link "
+            f"made is removed'''
+new = '''
+
+    if False:
+        raise ConfigEditError(
+            f"{object_type} has no field {field_name!r} written in {ONTOLOGY_FILE}. A field that a link "
+            f"made is removed'''
+tests = [
+    'tests/unit/test_remove_edit.py::TestWhatIsRefused::test_it_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1011'
+describes = 'a field written as a link is sent to its link type'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if fields[field_name].get("type") == "link":'
+new = '    if False:'
+tests = [
+    'tests/unit/test_remove_edit.py::TestWhatIsRefused::test_a_field_written_as_a_link_is_sent_to_its_link_type',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1012'
+describes = "a type's identifier is never removed as a field"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if field_name == type_def.get("id_field"):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_remove_edit.py::TestWhatIsRefused::test_the_identifier_is_never_removed_even_when_the_file_lists_it_as_a_field',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1013'
+describes = 'an unknown kind of removal is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if kind not in REMOVAL_KINDS:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_remove_edit.py::TestWhatIsRefused::test_it_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1018'
+describes = "a type's binding goes with it from source_bindings.yaml"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if object_type not in held:
+        return edited, bindings'''
+new = '''
+    if True:
+        return edited, bindings'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestRemovingAType::test_the_binding_goes_with_the_type_from_source_bindings',
+    'tests/unit/test_remove_edit.py::TestRemovingAWholeType::test_its_binding_goes_with_it_and_the_others_stay',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1059'
+describes = 'retype: a link field is not retyped'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if declared.get("type") != "data":'
+new = '    if False:'
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatIsRefused::test_it_says_why[given2-not a data field]',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1060'
+describes = 'retype: the identifier is not retyped'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if isinstance(field_name, str) and field_name == type_def.get("id_field"):
+        raise ConfigEditError(f"{where} is the type's identifier, and its type is not changed here.")'''
+new = '''
+    if False:
+        raise ConfigEditError("")'''
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatIsRefused::test_the_types_identifier_is_never_retyped_even_when_the_file_lists_it_as_a_field',
+    'tests/unit/test_retype_edit.py::TestWhatIsRefused::test_the_identifier_not_listed_as_a_field_is_not_said_to_be_a_links_value',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1061'
+describes = 'retype: the field that decides who may see a row is not retyped'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if isinstance(security, dict) and field_name == security.get("field"):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatIsRefused::test_the_field_that_decides_who_may_see_a_row_is_refused',
+    'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_what_is_refused_and_how[given6-400-who may see each row]',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1067'
+describes = 'retype: a computed field is refused by its rule, from the file'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if any(key in declared for key in ("derived", "enrich", "predict")):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatIsRefused::test_a_computed_field_is_refused_whatever_its_rule_is',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1068'
+describes = 'retype: only a data type of the vocabulary is accepted'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+    if not isinstance(data_type, str) or data_type not in data_types:
+        raise ConfigEditError(f"{where}'s data type is one of'''
+new = '''
+    if not isinstance(data_type, str):
+        raise ConfigEditError(f"{where}'s data type is one of'''
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatIsRefused::test_a_type_off_the_callers_list_is_refused_though_the_mirror_knows_it',
+    'tests/unit/test_retype_edit.py::TestWhatIsRefused::test_it_says_why[given4-data type is one of]',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1069'
+describes = 'retype: a different type is required'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if data_type == current:'
+new = '    if False:'
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatIsRefused::test_it_says_why[given5-already number]',
+    'tests/unit/test_retype_edit.py::test_a_field_with_no_data_type_counts_as_string_so_string_is_refused_for_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1070'
+describes = 'retype: a CRLF file stays CRLF'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '    return edited.replace("\n", "\r\n") if crlf else edited'
+new = '    return edited'
+tests = [
+    'tests/unit/test_retype_edit.py::TestLineEnds::test_a_file_with_crlf_keeps_crlf_on_every_line_including_the_one_added',
+    'tests/unit/test_retype_edit.py::TestLineEnds::test_a_crlf_file_differs_from_its_original_in_one_line_only',
+    'tests/integration/test_retype_from_the_ui.py::TestACrlfFileStaysCrlf::test_retype_keeps_every_line_end_and_the_digest_is_the_files_own',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1071'
+describes = 'retype: a file mixing CRLF and LF is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '        if re.search(r"(?<!\r)\n", ontology):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_retype_edit.py::TestLineEnds::test_a_file_that_mixes_the_two_is_refused_not_half_converted',
+    'tests/integration/test_retype_from_the_ui.py::TestACrlfFileStaysCrlf::test_a_file_mixing_line_ends_is_refused_and_untouched',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1073'
+describes = 'retype: an editor of the ontology other than retype keeps CRLF too'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '                    outputs[index] = text.replace("\n", "\r\n")'
+new = '                    outputs[index] = text'
+tests = [
+    'tests/integration/test_retype_from_the_ui.py::TestACrlfFileStaysCrlf::test_a_description_keeps_every_line_end',
+    'tests/integration/test_retype_from_the_ui.py::TestACrlfFileStaysCrlf::test_a_removal_keeps_every_line_end',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1074'
+describes = 'retype: a field written inside {...} is refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '    if any(getattr(each, "fa", None) is not None and each.fa.flow_style() for each in chain'
+new = '    if False and any(getattr(each, "fa", None) is not None and each.fa.flow_style() for each in chain'
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatCannotBeEditedByLine::test_a_field_written_on_one_line_is_refused_both_ways',
+    'tests/unit/test_retype_edit.py::TestWhatCannotBeEditedByLine::test_a_whole_fields_block_in_flow_style_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1075'
+describes = 'retype: a field that comes in through a merge key is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '''
+        if part not in node.lc.data:
+            raise ConfigEditError(
+                f"{where} comes in through'''
+new = '''
+        if False:
+            raise ConfigEditError(
+                f"{where} comes in through'''
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatCannotBeEditedByLine::test_a_field_that_arrives_through_a_merge_is_refused_with_where_to_go',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1076'
+describes = 'retype: a field that takes its keys from a merge is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/config_editing.py'
+old = '    if getattr(node, "merge", None):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatCannotBeEditedByLine::test_a_data_type_taken_from_a_merge_inside_the_field_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1077'
+describes = 'retype: a field with an anchor is refused'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '    if any(getattr(each, "anchor", None) is not None and each.anchor.value is not None for each in chain'
+new = '    if False and any(getattr(each, "anchor", None) is not None and each.anchor.value is not None for each in chain'
+tests = [
+    'tests/unit/test_retype_edit.py::TestWhatCannotBeEditedByLine::test_a_field_with_an_anchor_is_refused_rather_than_changing_what_aliases_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1078'
+describes = 'retype: a field with no data_type gets the line under its type'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/config_editing.py'
+old = '        edited = _edit_line(ontology, [*path, "data_type"], data_type, ONTOLOGY_FILE, after=("type",))'
+new = '        edited = _edit_line(ontology, [*path, "data_type"], data_type, ONTOLOGY_FILE)'
+tests = [
+    'tests/unit/test_retype_edit.py::test_a_field_with_no_data_type_gets_the_line_under_its_type',
+]
+expect = "fails"

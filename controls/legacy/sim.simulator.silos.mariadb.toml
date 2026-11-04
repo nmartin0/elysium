@@ -1,0 +1,14 @@
+[[control]]
+id = 'LEG-0791'
+describes = 'SIM: MariaDB consumer limits arrive through init_connect'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/silos/mariadb.py'
+old = '''
+                *self._init_connect(),
+'''
+new = ''
+tests = [
+    'sim/tests/test_database_realism.py::test_the_reader_is_disconnected_when_idle_and_the_business_is_not',
+]
+expect = "fails"

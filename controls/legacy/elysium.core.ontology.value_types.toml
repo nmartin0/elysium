@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0337'
+describes = 'R28: an address keys without case'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/value_types.py'
+old = '        return email_normalised(text.strip()).casefold()'
+new = '        return email_normalised(text.strip())'
+tests = [
+    'tests/unit/test_value_types.py::TestTheCanonicalKey::test_an_address_keys_without_case',
+]
+expect = "fails"

@@ -1,0 +1,246 @@
+[[control]]
+id = 'LEG-0009'
+describes = 'seeding writes in chunks rather than building every row first'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '        if len(chunk) >= SEED_CHUNK_ROWS:'
+new = '        if False:'
+tests = [
+    'sim/tests/test_runner.py::test_seeding_really_writes_in_chunks',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0011'
+describes = 'a seed step with a count writes that many rows per subject'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '        [row for row in world.subject_rows(step.per) for _ in range(step.count)]'
+new = '        list(world.subject_rows(step.per))'
+tests = [
+    'sim/tests/test_field_service.py::test_every_engineer_has_more_than_one_row',
+    'sim/tests/test_field_service.py::test_engineers_hold_skills_through_a_join_table',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0012'
+describes = "a seed step's picks reach the row being built"
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '            context.picked[name] = context.rng.choice(candidates)'
+new = '            context.picked[name] = candidates[0]'
+tests = [
+    'sim/tests/test_sqlite_relational.py::test_a_seed_step_s_picks_vary_and_reach_the_row_being_built',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0020'
+describes = 'seeding leaves no stale view of a table it wrote'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '    world.forget_subject_rows()'
+new = '    pass'
+tests = [
+    'sim/tests/test_runner.py::test_seeding_leaves_no_stale_view_of_a_table_it_wrote',
+    'sim/tests/test_field_service.py::test_both_copies_of_a_household_accumulate_work',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0028'
+describes = 'a lookup table writes the rows it declares'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '    if step.rows:'
+new = '    if False:'
+tests = [
+    'sim/tests/test_field_service.py::test_the_skills_are_the_ones_a_plumbing_firm_really_has',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0030'
+describes = 'distinct picks do not repeat within a subject'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '            if step.distinct_picks:'
+new = '            if False:'
+tests = [
+    'sim/tests/test_runner.py::test_distinct_picks_refuse_to_repeat_within_a_subject',
+    'sim/tests/test_field_service.py::test_no_engineer_holds_the_same_ticket_twice',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0031'
+describes = "one subject's picks do not constrain another's"
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '        if subject is not previous_subject:'
+new = '        if False:'
+tests = [
+    'sim/tests/test_runner.py::test_distinct_picks_refuse_to_repeat_within_a_subject',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0033'
+describes = 'a withheld table really is refused to the reader'
+invariant = 'I3'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '            withhold(silos[silo_name], database,'
+new = '            _ = (lambda *a, **k: None)(silos[silo_name], database,'
+tests = [
+    'sim/tests/test_field_service.py::test_the_reader_cannot_see_what_the_engineers_earn',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0039'
+describes = 'an attached world takes its shape from the engine'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '        schemas[silo_name] = (read_schema(silo, database) if database is not None'
+new = '        schemas[silo_name] = (pack.schemas[silo_name] if database is not None'
+tests = [
+    'sim/tests/test_resume.py::test_a_drifted_world_resumes_with_the_shape_drift_left',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0042'
+describes = 'a failed tick puts memory back where the databases are'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '        _restore(world, before)'
+new = '        pass'
+tests = [
+    'sim/tests/test_runner.py::test_a_failed_tick_leaves_memory_where_the_databases_are',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0043'
+describes = 'a restored entity is a copy, not the same object'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '        "entities": {name: [replace(entity) for entity in entities]'
+new = '        "entities": {name: list(entities)'
+tests = [
+    'sim/tests/test_runner.py::test_a_failed_tick_leaves_memory_where_the_databases_are',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0045'
+describes = "a pack's watches reach the oracle"
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '''
+        ports=registry,
+        oracle=Oracle(watches=pack.watches),'''
+new = '        ports=registry,'
+tests = [
+    'sim/tests/test_field_service.py::test_the_pack_watches_the_numbers_the_firm_would_notice',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0049'
+describes = 'a replica is refreshed only when its interval comes round'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '        if due is not None and elapsed - due < spec.refresh_seconds:'
+new = '        if False:'
+tests = [
+    'sim/tests/test_replicas.py::test_a_replica_falls_behind_and_catches_up',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0050'
+describes = 'a replica is rebuilt rather than added to'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '            truncate(target, database, table)'
+new = '            pass'
+tests = [
+    'sim/tests/test_replicas.py::test_a_replica_reflects_changes_and_not_just_additions',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0051'
+describes = 'each world keeps its own replica refresh clock'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '''
+        due = world.replica_refreshed.get(name)
+        if due is not None and elapsed - due < spec.refresh_seconds:
+            continue
+        world.replica_refreshed[name] = elapsed'''
+new = '''
+        due = _SHARED_REFRESH.get(name)
+        if due is not None and elapsed - due < spec.refresh_seconds:
+            continue
+        _SHARED_REFRESH[name] = elapsed'''
+tests = [
+    'sim/tests/test_replicas.py::test_two_worlds_do_not_share_a_refresh_clock',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0781'
+describes = "SIM: a fresh world records its replicas' schemas"
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '        schemas=dict(schemas),'
+new = '        schemas=dict(pack.schemas),'
+tests = [
+    'sim/tests/test_replicas.py::test_a_world_with_a_replica_resumes',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0788'
+describes = 'SIM: the runner gives sources their between-ticks turn'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/runner.py'
+old = '        silo.between_ticks(world.clock.now())'
+new = '        pass'
+tests = [
+    'sim/tests/test_publishing.py::test_a_packs_file_options_reach_the_share_and_late_files_follow_the_clock',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0798'
+describes = 'SIM: a replica withholds what its source withholds'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/runner.py'
+old = '            origin = pack.silo(silo_name).replicates or silo_name'
+new = '            origin = silo_name'
+tests = [
+    'sim/tests/test_replicas.py::test_a_replica_withholds_what_its_source_withholds',
+]
+expect = "fails"

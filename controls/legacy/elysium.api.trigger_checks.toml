@@ -1,0 +1,76 @@
+[[control]]
+id = 'LEG-0507'
+describes = "WINDOWS: the timer's handler evaluates the trigger"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/trigger_checks.py'
+old = '''
+    fired = _run(app, only(firing.key))
+'''
+new = '''
+    fired = 0
+'''
+tests = [
+    'tests/integration/test_trigger_windows.py::TestItSetsATimerForTheNextCrossing::test_the_timer_firing_tells_them_and_sets_the_next',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0508'
+describes = 'WINDOWS: the server starting checks date-filtered triggers'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/trigger_checks.py'
+old = '            or (dated and reads_the_clock(trigger, view))))'
+new = '            or False))'
+tests = [
+    'tests/integration/test_trigger_windows.py::test_the_server_starting_checks_every_date_filtered_trigger',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0535'
+describes = 'COMBINED: a missed scheduled check is said'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/trigger_checks.py'
+old = '''
+    if firing.missed:
+        from datetime import UTC, datetime'''
+new = '''
+    if False:
+        from datetime import UTC, datetime'''
+tests = [
+    'tests/integration/test_combined_triggers.py::TestOnASchedule::test_a_missed_check_is_said',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0544'
+describes = 'DECLARED: a schedule check finds a config.yaml trigger'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/trigger_checks.py'
+old = '                  *app.state.generation.config.declared_triggers]'
+new = '                  ]'
+tests = [
+    'tests/integration/test_combined_triggers.py::test_a_scheduled_config_yaml_trigger_is_checked_by_its_timer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0551'
+describes = 'TRIGGERS: changes saved during a check become one more check'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/trigger_checks.py'
+old = '''
+            if self._running:
+                # GATHERED for the run already going to take them.
+                return
+'''
+new = ''
+tests = [
+    'tests/integration/test_trigger_checks.py::TestCoalescing::test_changes_during_a_check_become_one_more_check',
+]
+expect = "fails"

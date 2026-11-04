@@ -1,0 +1,51 @@
+[[control]]
+id = 'LEG-0601'
+describes = 'MEANING: a stale vector goes before anything is embedded'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/embeddings.py'
+old = '    report.removed = store.remove(object_type, stale)'
+new = '    report.removed = 0'
+tests = [
+    'tests/unit/test_embeddings.py::TestRefreshing::test_a_row_whose_text_changed_loses_its_old_vector_first',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0602'
+describes = 'MEANING: vectors of two model versions are never compared'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/embeddings.py'
+old = '"WHERE object_type = ? AND version = ? ORDER BY object_id",'
+new = '"WHERE object_type = ? AND (version = ? OR 1) ORDER BY object_id",'
+tests = [
+    'tests/unit/test_embeddings.py::TestRefreshing::test_a_new_model_version_embeds_everything_again',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0603'
+describes = 'MEANING: the sync embeds within its budget'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/embeddings.py'
+old = '        if clock() - started >= budget_seconds:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_embeddings.py::TestRefreshing::test_the_budget_stops_it_and_the_next_run_carries_on',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0604'
+describes = 'MEANING: blank text is not embedded'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/embeddings.py'
+old = '        if text and text.strip():'
+new = '        if text:'
+tests = [
+    'tests/unit/test_embeddings.py::TestRefreshing::test_rows_gone_from_gold_and_rows_with_no_text_are_removed',
+]
+expect = "fails"

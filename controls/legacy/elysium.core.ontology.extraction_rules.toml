@@ -1,0 +1,42 @@
+[[control]]
+id = 'LEG-0580'
+describes = 'EXTRACT: a sign stays with its number'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/extraction_rules.py'
+old = '_TOKEN = re.compile(r"(?:(?<!\w)[-+](?=\d))?\w+(?:[-_/.,]\w+)*|[^\w\s]", re.UNICODE)'
+new = '_TOKEN = re.compile(r"\w+(?:[-_/.,]\w+)*|[^\w\s]", re.UNICODE)'
+tests = [
+    'tests/unit/test_extraction_rules.py::TestShapes::test_each_shape_takes_its_kind_of_value_as_written',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0581'
+describes = 'EXTRACT: punctuation between phrase and value is not counted'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/extraction_rules.py'
+old = '''
+        if not _IS_WORD.search(token):
+            # PUNCTUATION'''
+new = '''
+        if False:
+            # PUNCTUATION'''
+tests = [
+    'tests/unit/test_extraction_rules.py::TestWhereTheValueIs::test_punctuation_between_is_skipped_and_words_are_counted',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0582'
+describes = 'EXTRACT: a rule looks no further than `within` words'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/extraction_rules.py'
+old = 'while index < len(found) and looked < within:'
+new = 'while index < len(found) and looked < within + 5:'
+tests = [
+    'tests/unit/test_extraction_rules.py::TestWhereTheValueIs::test_punctuation_between_is_skipped_and_words_are_counted',
+]
+expect = "fails"

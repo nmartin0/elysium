@@ -1,0 +1,76 @@
+[[control]]
+id = 'LEG-0504'
+describes = "WINDOWS: every evaluation sets a date-filtered trigger's next wake"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_runs.py'
+old = '''
+    _schedule_windows(data_dir, mediator, views, made, declared, owners)
+'''
+new = ''
+tests = [
+    'tests/integration/test_trigger_windows.py::TestItSetsATimerForTheNextCrossing::test_made_now_it_wakes_when_the_first_record_leaves',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0527'
+describes = "COMBINED: a change to any condition's view reaches the trigger"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_runs.py'
+old = '''
+                if any(view is not None and include(trigger, view)
+                       for view in _views_of(trigger, views))]'''
+new = '''
+                if (view := views.get(trigger.view_id)) is not None
+                and include(trigger, view)]'''
+tests = [
+    'tests/integration/test_combined_triggers.py::TestAllOrAny::test_all_fires_when_the_last_part_becomes_true',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0532'
+describes = 'COMBINED: a held trigger sets its hold timer'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/trigger_runs.py'
+old = '                schedule_hold(timers, states, trigger)'
+new = '                pass'
+tests = [
+    'tests/integration/test_combined_triggers.py::TestHeldForAWhile::test_fires_when_the_hold_ends_not_before',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0541'
+describes = 'DECLARED: a combined config.yaml trigger is evaluated as a state'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/trigger_runs.py'
+old = '''
+    for trigger in declared:
+        if is_state_trigger(trigger):'''
+new = '''
+    for trigger in declared:
+        if False:'''
+tests = [
+    'tests/unit/test_declared_combined_triggers.py::TestItRuns::test_held_and_combined_it_proposes_on_the_named_conditions_objects',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0552'
+describes = 'TRIGGERS: one evaluation at a time across processes'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/trigger_runs.py'
+old = '''
+        fcntl.flock(lock, fcntl.LOCK_EX)
+'''
+new = ''
+tests = [
+    'tests/integration/test_trigger_checks.py::TestOneAtATime::test_a_second_evaluation_waits_for_the_first',
+]
+expect = "fails"

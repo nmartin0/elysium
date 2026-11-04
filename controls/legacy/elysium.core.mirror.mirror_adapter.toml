@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0424'
+describes = "F-07: the mirror's single reverse-link read follows a join table's target column"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/mirror_adapter.py'
+old = '            selected_fields=(route.result_column,),'
+new = '            selected_fields=(target_id_column,),'
+tests = [
+    'tests/unit/test_link_route.py::test_the_mirror_single_reverse_read_follows_the_join_table',
+]
+expect = "fails"

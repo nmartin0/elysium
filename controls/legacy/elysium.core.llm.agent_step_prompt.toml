@@ -1,0 +1,77 @@
+[[control]]
+id = 'LEG-0102'
+describes = 'AR-5: next_step sends the schema when constrained'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/llm/agent_step_prompt.py'
+old = '                           if constrain else True),'
+new = '                           if False else True),'
+tests = [
+    'tests/unit/test_step_schema.py::TestItReachesTheServer::test_next_step_passes_a_schema_only_when_constrained',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0425'
+describes = 'AGENT-FEATURES: the prompt grows only for a switch that is on'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/llm/agent_step_prompt.py'
+old = '        (features.free_text_search, FREE_TEXT_SECTION),'
+new = '        (True, FREE_TEXT_SECTION),'
+tests = [
+    'tests/unit/test_agent_features.py::TestOffChangesNothing::test_the_prompt_carries_no_section_of_a_switch_that_is_off',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0426'
+describes = 'AGENT-FEATURES: a remember step is unknown while its switch is off'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/agent_step_prompt.py'
+old = '    if step == "remember" and features.remember_from_query:'
+new = '    if step == "remember":'
+tests = [
+    'tests/unit/test_agent_features.py::TestOffChangesNothing::test_the_new_steps_are_unrecognised',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0615'
+describes = 'MEANING-AGENT: the prompt marks types only with the switch on'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/agent_step_prompt.py'
+old = '    if mark_meaning and definition.get("searchable_by_meaning"):'
+new = '    if definition.get("searchable_by_meaning"):'
+tests = [
+    'tests/unit/test_agent_features.py::TestMeaningSearch::test_only_types_searchable_by_meaning_are_marked_and_offered',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0701'
+describes = 'TIMING: a step call is recorded as a step'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/agent_step_prompt.py'
+old = '                usage=usage.for_part("step") if usage is not None else None, cancel=cancel,'
+new = '                usage=usage, cancel=cancel,'
+tests = [
+    'tests/unit/test_where_a_questions_time_goes.py::TestEachCallSaysWhatItIsFor::test_a_step_a_plan_and_an_answer',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0838'
+describes = 'ASSISTANT PERIOD: the parser refuses a period that is not one of ours'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/llm/agent_step_prompt.py'
+old = '            if parsed["period"] not in PERIODS:'
+new = '            if False:'
+tests = [
+    'tests/unit/test_the_assistant_asks_by_period.py::TestTheParser::test_an_unknown_period_finishes_rather_than_guessing',
+]
+expect = "fails"

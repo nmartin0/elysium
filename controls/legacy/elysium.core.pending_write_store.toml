@@ -1,0 +1,38 @@
+[[control]]
+id = 'LEG-0400'
+describes = "R50: only the automation's own waiting writes are left out"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/pending_write_store.py'
+old = '            if (pending.user_id == user_id and pending.origin == origin'
+new = '            if (pending.origin == origin or True'
+tests = [
+    'tests/unit/test_trigger_actions.py::TestItDoesNotProposeWhatIsAlreadyWaiting::test_the_same_change_proposed_by_a_person_does_not_count',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0438'
+describes = 'R13: a waiting write naming an erased id as a parameter is withdrawn'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/core/pending_write_store.py'
+old = '        if any(is_erased_as_any_type(key_hash, hashes_by_type, item) for item in values):'
+new = '        if False:'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_waiting_write_about_them_is_withdrawn_and_audited_without_them',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0439'
+describes = 'R13: a waiting write targeting an erased object is withdrawn'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/core/pending_write_store.py'
+old = '                if _about_erased(pending, key_hash, hashes_by_type):'
+new = '                if False:'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_waiting_write_about_them_is_withdrawn_and_audited_without_them',
+]
+expect = "fails"

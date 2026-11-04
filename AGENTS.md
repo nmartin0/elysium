@@ -68,8 +68,8 @@ It lists every small change to the code that no selected test caught.
 A survivor is a question, not a verdict -- some mean the same thing
 either way -- so read each, then write the test or let it go. Its first
 two runs found a sync mark that could have moved backwards and 40-odd
-untested refusals in the derived-field loader. `src/elysium/scripts/check_controls.py`
-remains where a deliberate break is RECORDED; this is where one is
+untested refusals in the derived-field loader. `controls/<area>/<ID>.toml`
+is where a deliberate break is RECORDED (`python tools/check_controls.py`); this is where one is
 looked for. Property tests (hypothesis) live in
 `tests/unit/test_properties.py`.
 

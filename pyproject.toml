@@ -190,7 +190,7 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Header"]
 # the older pin turned out to be unnecessary -- 55 source files, no
 # issues. That pin is why sim's requirements downgraded Elysium's type
 # checker by a major version whenever either was installed.
-files = ["src/elysium/core", "src/elysium/api", "src/elysium/adapters", "src/elysium/scripts/check_controls.py",
+files = ["src/elysium/core", "src/elysium/api", "src/elysium/adapters",
          "sdk/python", "sim/panel/server.py",
          "sim/simulator"]
 ignore_missing_imports = true

@@ -1,0 +1,40 @@
+[[control]]
+id = 'LEG-0077'
+describes = 'a field declaring no_invisible_characters is enforced'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/constraints.py'
+old = '    if constraints.get("no_invisible_characters"):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_invisible_characters_can_be_declared.py::TestTheDeclaredRule::test_a_violation_is_reported',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0078'
+describes = 'a field declaring no_misleading_text is enforced'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/constraints.py'
+old = '    if constraints.get("no_misleading_text"):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_misleading_text_can_be_declared.py::TestTheDeclaredRule::test_a_violation_is_reported',
+    'tests/unit/test_misleading_text_can_be_declared.py::TestTheDeclaredRule::test_the_two_rules_are_independent',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0312'
+describes = 'DEP-4: a declared email constraint holds a row back in silver'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/constraints.py'
+old = '    if constraints.get("email"):'
+new = '    if False:'
+tests = [
+    'tests/unit/test_reference_data_checks.py::test_silver_tidies_and_holds_back_through_a_real_sync',
+    'tests/unit/test_reference_data_checks.py::TestEmailAddresses::test_syntax_is_checked',
+]
+expect = "fails"

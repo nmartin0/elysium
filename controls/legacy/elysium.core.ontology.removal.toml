@@ -1,0 +1,121 @@
+[[control]]
+id = 'LEG-0142'
+describes = "removal dialog: says a later erasure still reaches the removed type's tables"
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/removal.py'
+old = '    "A later erasure request still reaches these tables,'
+new = '    "A later erasure request cannot reach these tables,'
+tests = [
+    'tests/unit/test_removal.py::TestWhatATypeLeavesBehind::test_it_says_source_untouched_the_tables_stay_and_nothing_serves_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1014'
+describes = 'a pending write on a field blocks its removal'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/removal.py'
+old = '''
+        if waiting:
+'''
+new = '''
+        if False:
+'''
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhatBlocks::test_a_proposed_write_waiting_on_it_blocks_and_an_applied_one_does_not',
+    'tests/unit/test_removal.py::test_a_proposed_write_is_a_blocker_and_an_applied_one_is_not',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1019'
+describes = 'a pending write on any field of a type blocks its removal'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/removal.py'
+old = '    own_fields = [(object_type, name) for name in (schema.get(object_type) or {}).get("fields") or {}]'
+new = '    own_fields = []'
+tests = [
+    'tests/integration/test_removal_from_the_ui.py::TestWhatBlocksATypeFromGoing::test_a_proposed_write_waiting_on_one_of_its_fields_blocks_and_an_applied_one_does_not',
+    'tests/unit/test_removal.py::TestWhatBlocksAWholeType::test_a_pending_write_on_any_field_of_the_type_blocks',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1020'
+describes = 'a function that declares it reads the type blocks its removal'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/removal.py'
+old = '              for function in functions if object_type in getattr(function, "reads_object_types", ())]'
+new = '              for function in functions if False]'
+tests = [
+    'tests/unit/test_removal.py::TestWhatBlocksAWholeType::test_a_function_declaring_it_reads_the_type_blocks',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1023'
+describes = "the type's own fields do not hide a blocker from the person removing the type"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/removal.py'
+old = '    found = [replace(row, subjects=tuple(name for name in row.subjects if name not in own))'
+new = '    found = [replace(row, subjects=tuple(name for name in row.subjects if True))'
+tests = [
+    'tests/unit/test_removal.py::TestWhatBlocksAWholeType::test_the_types_own_fields_are_not_hidden_from_the_person_asking',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1024'
+describes = 'the dialog says what a removed type leaves in each layer'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/removal.py'
+old = '''
+    if kind == "type":
+        notes = [_UNTOUCHED, *_TYPE_TABLES,'''
+new = '''
+    if False:
+        notes = [_UNTOUCHED, *_TYPE_TABLES,'''
+tests = [
+    'tests/unit/test_removal.py::TestWhatATypeLeavesBehind::test_it_says_source_untouched_the_tables_stay_and_nothing_serves_it',
+    'tests/integration/test_removal_from_the_ui.py::TestRemovingAType::test_the_preview_shows_the_lines_that_go_and_the_honest_sentences_about_stored_data',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1025'
+describes = 'a check that could not be made (no write log) blocks rather than passes'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/removal.py'
+old = '''
+    if write_log is None:
+        return [Referrer(PENDING_WRITE, "write log",'''
+new = '''
+    if write_log is None:
+        return []
+    if False:
+        return [Referrer(PENDING_WRITE, "write log",'''
+tests = [
+    'tests/unit/test_removal.py::test_without_a_write_log_it_cannot_be_told_and_that_blocks',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1026'
+describes = 'a blocker is shown only if every name it carries is one the person could find'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/removal.py'
+old = '    shown = [item for item in blockers if all(knows(subject) for subject in item.subjects)]'
+new = '    shown = list(blockers)'
+tests = [
+    'tests/unit/test_removal.py::TestWhatThePersonMaySee::test_a_row_naming_one_unknown_name_is_counted_and_not_shown',
+    'tests/integration/test_removal_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_blockers_naming_what_they_cannot_discover_are_counted_not_named',
+]
+expect = "fails"

@@ -1,0 +1,51 @@
+[[control]]
+id = 'LEG-0457'
+describes = 'R60: when the preferred source moves, the other source held'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/source_record.py'
+old = '            held, moved = losing_source, chosen_source'
+new = '            held, moved = chosen_source, losing_source'
+tests = [
+    'tests/unit/test_source_track_record.py::TestHowADisagreementEnds::test_the_preferred_source_moving_means_the_other_held',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0458'
+describes = 'R60: both moving to a third value is no evidence'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/source_record.py'
+old = '            continue  # both moved to a third value: no evidence either way'
+new = '            held, moved = chosen_source, losing_source'
+tests = [
+    'tests/unit/test_source_track_record.py::TestHowADisagreementEnds::test_both_moving_to_a_third_value_is_no_evidence',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0459'
+describes = 'R60: the browser sees nothing below ten ended disagreements'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/source_record.py'
+old = '        if self.total < SHOWN_FROM:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_source_track_record.py::TestWhatTheBrowserMaySee::test_nothing_below_the_minimum',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0464'
+describes = 'R60: an erasure forgets the votes about them'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/source_record.py'
+old = '            conn.executemany("DELETE FROM votes WHERE rowid = ?", voted)'
+new = '            pass'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_vote_about_them_is_forgotten',
+]
+expect = "fails"

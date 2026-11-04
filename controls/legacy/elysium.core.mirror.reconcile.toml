@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0112'
+describes = 'R8: declared standardisation is told apart from a fault'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/reconcile.py'
+old = '            if as_standardised == gold_comparable:'
+new = '            if False:'
+tests = [
+    'tests/unit/test_reconcile_against_the_source.py::TestTheComparison::test_declared_standardisation_is_expected_not_a_fault',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0113'
+describes = 'R8: a row only in gold is found'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/reconcile.py'
+old = '    result.only_in_gold = sorted(set(gold_by_id) - set(source_by_id))'
+new = '    result.only_in_gold = []'
+tests = [
+    'tests/unit/test_reconcile_against_the_source.py::TestAgainstARealSourceAndARealSync::test_changes_behind_the_mirror_are_found_exactly',
+]
+expect = "fails"

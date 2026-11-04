@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0466'
+describes = 'R63: a search filtered on an inferred field counts as inferred data'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/llm/inferred_values.py'
+old = '        names.update(k for k in item["filter"] if isinstance(k, str))'
+new = '        pass'
+tests = [
+    'tests/unit/test_answers_say_what_is_inferred.py::TestWhatCountsAsInferredData',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0650'
+describes = 'PREDICT: an answer resting on a prediction says so'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/llm/inferred_values.py'
+old = '''
+            if prediction is not None:
+                found[(object_type, field_name)] = InferredField('''
+new = '''
+            if False:
+                found[(object_type, field_name)] = InferredField('''
+tests = [
+    'tests/unit/test_predictions.py::test_an_answer_resting_on_a_prediction_says_so',
+]
+expect = "fails"

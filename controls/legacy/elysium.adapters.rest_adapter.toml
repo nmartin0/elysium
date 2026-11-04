@@ -1,0 +1,190 @@
+[[control]]
+id = 'LEG-0757'
+describes = 'REST: server errors and 429 are retried'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '                if response.status_code not in RETRIED:'
+new = '                if True:'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFailures::test_server_errors_are_retried_with_growing_waits',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0758'
+describes = 'REST: a Retry-After the API sends wins over the default wait'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '            delay = wait if wait is not None else 2.0 ** attempt'
+new = '            delay = 2.0 ** attempt'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFailures::test_retry_after_as_a_date_wins',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0759'
+describes = 'REST: any other client error stops at once'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = 'RETRIED = frozenset({429, 500, 502, 503, 504})'
+new = 'RETRIED = frozenset({404, 429, 500, 502, 503, 504})'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFailures::test_a_client_error_is_not_retried',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0760'
+describes = 'REST: a repeated page token is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '                if token in seen_tokens:'
+new = '                if False:'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestPaging::test_a_repeated_page_token_is_refused_not_followed_forever',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0761'
+describes = 'REST: numbers are read as exact decimals'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '                body = json.loads(response.text, parse_float=Decimal)'
+new = '                body = json.loads(response.text, parse_float=float)'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestPaging::test_numbers_stay_exact',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0762'
+describes = 'REST: the credential never appears in an error'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '            body = body.replace(secret, "***")'
+new = '            pass'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFailures::test_the_credential_never_appears_in_an_error',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0763'
+describes = 'REST: one read of a table per sync'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '''
+        if self._pinned is not None:
+            self._pinned[table_name] = records'''
+new = '''
+        if False:
+            self._pinned[table_name] = records'''
+tests = [
+    'tests/unit/test_rest_adapter.py::TestOneReadPerSync::test_columns_and_rows_come_from_one_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0764'
+describes = 'REST: a bearer token is sent'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = "            return {\"Authorization\": f\"Bearer {auth['token']}\"}, {}, None"
+new = '            return {}, {}, None'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestTheSimulatorsApi::test_every_page_is_read_once',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0767'
+describes = 'REST: a token echoed alone in an error is masked'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '''
+        self._secrets = [str(auth[key]) for key in ("token", "api_key", "password",
+                                                    "client_secret")'''
+new = '        self._secrets = [str(auth[key]) for key in ()'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFoundInReview::test_a_bearer_token_echoed_alone_is_masked',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0768'
+describes = 'REST: the login is never sent to another host'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '        if _origin(url) != self._origin:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFoundInReview::test_a_next_page_on_another_host_is_not_sent_the_login',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0769'
+describes = 'REST: a page served twice is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '                if signature in seen_tokens:'
+new = '                if False:'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFoundInReview::test_an_api_ignoring_the_page_parameter_is_refused_quickly',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0770'
+describes = 'REST: only an empty page ends page or offset paging'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '                    params[name] = int(params[name]) + len(page)'
+new = '''
+                    params[name] = int(params[name]) + len(page)
+                    if paging.get("page_size") and len(page) < int(paging["page_size"]):
+                        break'''
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFoundInReview::test_a_server_capping_the_page_size_is_still_read_to_the_end',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0771'
+describes = 'REST: the health check is one attempt'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '        self._get(urljoin(self.base_url, spec["path"]), dict(spec["params"]), retries=0)'
+new = '        self._get(urljoin(self.base_url, spec["path"]), dict(spec["params"]))'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestFoundInReview::test_the_health_check_does_not_wait_out_retries',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0794'
+describes = 'REST: an OAuth token the server ended is renewed once'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/rest_adapter.py'
+old = '                if response.status_code == 401 and self._oauth is not None and not renewed:'
+new = '                if False:'
+tests = [
+    'tests/unit/test_rest_adapter.py::TestTokensThatExpire::test_a_token_the_server_ended_is_renewed_once_and_the_read_goes_on',
+]
+expect = "fails"

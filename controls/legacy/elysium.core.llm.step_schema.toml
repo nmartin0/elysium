@@ -1,0 +1,103 @@
+[[control]]
+id = 'LEG-0100'
+describes = 'AR-5: a filter value is one scalar'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/step_schema.py'
+old = '_SCALAR = {"type": ["string", "number", "integer", "boolean"]}'
+new = '_SCALAR = {"type": ["string", "number", "integer", "boolean", "array"]}'
+tests = [
+    'tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_refused_by_the_grammar[list-filter]',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0101'
+describes = "AR-5: each type's fields belong to that type"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/step_schema.py'
+old = '    this_type = {"const": object_type}'
+new = '    this_type = {"type": "string"}'
+tests = [
+    'tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_a_field_of_another_type_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0103'
+describes = 'AR-5: a plan is no longer than the hop limit'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/step_schema.py'
+old = '                                "minItems": 1, "maxItems": max_steps}},'
+new = '                                "minItems": 1}},'
+tests = [
+    'tests/unit/test_step_schema.py::TestThePlanSchema::test_a_plan_longer_than_the_hop_limit_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0104'
+describes = 'AR-5: a handle inside a list is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/llm/step_schema.py'
+old = '                                                                 "items": _PLAN_ID,'
+new = '                                                                 "items": _ID,'
+tests = [
+    'tests/unit/test_step_schema.py::TestThePlanSchema::test_a_wrapped_handle_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0105'
+describes = 'AR-5: a date filter is ISO-8601'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/step_schema.py'
+old = '    return _TEMPORAL if data_type in _TEMPORAL_TYPES else _SCALAR'
+new = '    return _SCALAR'
+tests = [
+    'tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_a_date_that_is_not_iso_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0106'
+describes = 'AR-5: group_by is a data field'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/step_schema.py'
+old = '        aggregate["group_by"] = _enum(data)'
+new = '        aggregate["group_by"] = _enum(list(fields))'
+tests = [
+    'tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_a_link_is_not_something_to_group_by',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0614'
+describes = 'MEANING-AGENT: the step is offered only for types searchable by meaning'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/llm/step_schema.py'
+old = '    if features.meaning_search and definition.get("searchable_by_meaning"):'
+new = '    if features.meaning_search:'
+tests = [
+    'tests/unit/test_agent_features.py::TestMeaningSearch::test_only_types_searchable_by_meaning_are_marked_and_offered',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0837'
+describes = 'ASSISTANT PERIOD: the grammar offers a period for a type with a date'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/llm/step_schema.py'
+old = '            aggregate["period"] = _enum(PERIODS)'
+new = '            pass'
+tests = [
+    'tests/unit/test_the_assistant_asks_by_period.py::TestTheGrammar',
+]
+expect = "fails"

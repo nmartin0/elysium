@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0401'
+describes = 'Backups: a truncated archive is refused (the last-segment flag)'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/encrypted_archive.py'
+old = '    return prefix + struct.pack(">I", index) + (b"\x01" if last else b"\x00")'
+new = '    return prefix + struct.pack(">I", index) + b"\x00"'
+tests = [
+    'tests/unit/test_encrypted_backups.py::TestTheArchive::test_a_truncation_at_a_segment_boundary_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0402'
+describes = 'Backups: a key file kept inside what it protects is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/encrypted_archive.py'
+old = '        if resolved == place or place in resolved.parents:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_encrypted_backups.py::TestTheKeyFile::test_a_key_inside_what_it_protects_is_refused',
+]
+expect = "fails"

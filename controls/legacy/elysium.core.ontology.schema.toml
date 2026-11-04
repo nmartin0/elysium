@@ -1,0 +1,38 @@
+[[control]]
+id = 'LEG-0888'
+describes = 'DEFAULT ORDER: a digit-only id is a number'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/schema.py'
+old = '    if isinstance(value, str) and value.isascii() and value.isdecimal():'
+new = '    if False:'
+tests = [
+    'tests/unit/test_schema_helpers.py::test_ids_of_digits_sort_as_the_numbers_they_are',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0889'
+describes = 'DISPLAY NAME: camel-case words are separated, not run together'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/schema.py'
+old = '    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", stem).split("_")'
+new = '    words = stem.split("_")'
+tests = [
+    'tests/unit/test_display_metadata.py::test_humanize_separates_camel_case_and_keeps_capitals',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0893'
+describes = 'DISCOVERABLE: only a real boolean lists a type'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/schema.py'
+old = '    return type_def.get("discoverable") is True'
+new = '    return bool(type_def.get("discoverable"))'
+tests = [
+    'tests/unit/test_discoverable_types.py::test_discoverable_is_exactly_true_and_nothing_loosely_true',
+]
+expect = "fails"

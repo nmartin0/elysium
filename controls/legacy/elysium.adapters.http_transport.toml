@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0411'
+describes = 'AL-11: cancelling a model call closes its connection, so the server stops'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/http_transport.py'
+old = '                opened.shut_down()'
+new = '                pass'
+tests = [
+    'tests/unit/test_cancel_stops_the_model_call.py::TestTheTransport::test_cancelling_closes_the_connection_and_the_server_sees_it',
+]
+expect = "fails"

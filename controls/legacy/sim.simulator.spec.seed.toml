@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0029'
+describes = 'declared rows must all name the same columns'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/spec/seed.py'
+old = '    if len(keys) > 1:'
+new = '    if False:'
+tests = [
+    'sim/tests/test_effects.py::test_every_declared_row_names_the_same_columns',
+]
+expect = "fails"

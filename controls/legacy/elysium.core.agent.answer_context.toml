@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0842'
+describes = 'ASSISTANT PERIOD: the account of the work says per what'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/answer_context.py'
+old = "                by += f\", per {entry['period']}\""
+new = '                by += ""'
+tests = [
+    'tests/unit/test_the_assistant_asks_by_period.py::test_the_account_of_the_work_says_per_what',
+]
+expect = "fails"

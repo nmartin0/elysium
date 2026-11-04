@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0333'
+describes = "R30: Tukey's fences are k times the interquartile range"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/outliers.py'
+old = '    low, high = q1 - k * (q3 - q1), q3 + k * (q3 - q1)'
+new = '    low, high = q1 - k, q3 + k'
+tests = [
+    'tests/unit/test_unusual_values_are_flagged.py::TestTheMethods::test_tukey_far_out_fences',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0334'
+describes = 'R30: free text has no usual shape to deviate from'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/outliers.py'
+old = '''
+        if held < DOMINANT_SHARE * len(present):
+            return {}'''
+new = '''
+        if False:
+            return {}'''
+tests = [
+    'tests/unit/test_unusual_values_are_flagged.py::TestTheMethods::test_free_text_has_no_usual_shape',
+]
+expect = "fails"

@@ -1,0 +1,39 @@
+[[control]]
+id = 'LEG-1133'
+describes = "the installer copies src/, which holds the server's package, and no directory that is absent"
+invariant = 'none'
+kind = 'mechanical'
+path = 'install/install.sh'
+old = 'cp -r "$SOURCE_DIR/src" '
+new = 'cp -r "$SOURCE_DIR/tools" '
+tests = [
+    'tests/unit/test_install_script_copies_what_exists.py::test_every_path_the_installer_copies_exists_in_the_repository',
+    'tests/unit/test_install_script_copies_what_exists.py::test_every_top_level_package_the_server_imports_is_copied',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1134'
+describes = 'the installer installs Python dependencies from the hashed lock'
+invariant = 'none'
+kind = 'semantic'
+path = 'install/install.sh'
+old = 'uv" sync --frozen --no-dev'
+new = 'uv" sync --no-dev'
+tests = [
+    'tests/unit/test_install_script_copies_what_exists.py::test_python_dependencies_come_from_the_hashed_lock_when_there_is_one',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1135'
+describes = 'the installer builds the UI from the lockfile with npm ci'
+invariant = 'none'
+kind = 'mechanical'
+path = 'install/install.sh'
+old = 'npm ci && npm run build'
+new = 'npm install && npm run build'
+tests = [
+    'tests/unit/test_install_script_copies_what_exists.py::test_the_ui_is_installed_with_npm_ci_and_never_npm_install',
+]
+expect = "fails"

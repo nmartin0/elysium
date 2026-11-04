@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0434'
+describes = 'R13: a frozen set loses an erased member'
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/core/frozen_sets.py'
+old = '                        if not is_erased(key_hash, hashes_by_type, row["object_type"], member)]'
+new = '                        if True]'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_frozen_set_loses_them_and_the_criteria_that_found_them',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0435'
+describes = "R13: a frozen set's criteria naming an erased id go"
+invariant = 'I6'
+kind = 'semantic'
+path = 'src/elysium/core/frozen_sets.py'
+old = '                if len(kept) == len(set_.member_ids) and not origin_names_one:'
+new = '                if len(kept) == len(set_.member_ids):'
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_frozen_set_loses_them_and_the_criteria_that_found_them',
+]
+expect = "fails"

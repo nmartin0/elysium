@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0592'
+describes = 'MEANING: a classified field is never embedded'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/semantic_search.py'
+old = '''
+            if labels:
+                raise ValueError(f"{where}: {name!r} is classified'''
+new = '''
+            if False:
+                raise ValueError(f"{where}: {name!r} is classified'''
+tests = [
+    'tests/unit/test_embeddings.py::TestTheDeclaration::test_one_that_could_not_be_embedded_safely_is_refused_at_load',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0593'
+describes = 'MEANING: a declaration needs a model to embed with'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/semantic_search.py'
+old = '        if not embedding_model:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_embeddings.py::TestTheDeclaration::test_one_that_could_not_be_embedded_safely_is_refused_at_load',
+]
+expect = "fails"

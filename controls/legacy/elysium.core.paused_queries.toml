@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0440'
+describes = 'R13: a paused question that read an erased object is dropped'
+invariant = 'I6'
+kind = 'mechanical'
+path = 'src/elysium/core/paused_queries.py'
+old = '                if row["write_id"] in withdrawn or any_erased('
+new = '                if row["write_id"] in withdrawn and any_erased('
+tests = [
+    'tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_paused_question_that_read_them_is_dropped_and_its_asker_told',
+]
+expect = "fails"

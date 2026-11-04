@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0433'
+describes = 'AGENT-FEATURES: an arm that did not finish gives no verdict'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/feature_bench.py'
+old = '        if len(trials) < len(arm.cases) * args.trials:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_feature_bench.py::test_an_unreachable_model_decides_nothing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0722'
+describes = 'ANSWER: brief stays off if an answer stops stating its facts'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/feature_bench.py'
+old = '''
+    if lost:
+        return "OFF", f"answers stopped stating their facts'''
+new = '''
+    if False:
+        return "OFF", f"answers stopped stating their facts'''
+tests = [
+    'tests/unit/test_shorter_answers.py::TestTheBriefVerdict::test_off_when_an_answer_stops_stating_its_facts',
+]
+expect = "fails"

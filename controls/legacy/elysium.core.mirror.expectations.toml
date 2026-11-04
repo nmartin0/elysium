@@ -1,0 +1,61 @@
+[[control]]
+id = 'LEG-0064'
+describes = 'a declared on_violation: fail stops the build'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/expectations.py'
+old = '''
+        failed = [v for v in violations if v.policy == FAIL]
+        if failed:'''
+new = '''
+        failed = [v for v in violations if v.policy == FAIL]
+        if False:'''
+tests = [
+    'tests/unit/test_silver_expectations.py::TestTheThreePolicies::test_fail_stops_the_build',
+    'tests/unit/test_silver_expectations.py::TestThroughTheSync::test_fail_leaves_the_mirror_unchanged',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0270'
+describes = "R29: silver applies the rule's declared policy"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/expectations.py'
+old = '            reason = rule_violation(rule, expected["type_def"], values)'
+new = '            reason = None'
+tests = [
+    'tests/unit/test_rules_between_two_fields.py::TestInSilver::test_quarantine_holds_the_row_and_names_the_rule',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0328'
+describes = 'R29: silver checks functional dependencies across rows'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/expectations.py'
+old = '''
+    _apply_dependencies(result, expectations)
+    _flag_outliers(result, expectations)'''
+new = '    _flag_outliers(result, expectations)'
+tests = [
+    'tests/unit/test_dependencies_across_rows.py::TestThroughARealSync::test_quarantine_holds_the_disagreeing_row_and_names_the_majority',
+    'tests/unit/test_dependencies_across_rows.py::TestThroughARealSync::test_fail_stops_the_build',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0332'
+describes = 'R30: silver flags unusual values'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/mirror/expectations.py'
+old = '''
+    _flag_outliers(result, expectations)
+    return result'''
+new = '    return result'
+tests = [
+    'tests/unit/test_unusual_values_are_flagged.py::test_a_flagged_row_still_lands',
+]
+expect = "fails"

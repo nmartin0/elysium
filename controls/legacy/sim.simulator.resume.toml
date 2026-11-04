@@ -1,0 +1,92 @@
+[[control]]
+id = 'LEG-0013'
+describes = 'a resume with no live entities refuses rather than continuing'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/resume.py'
+old = '    if not any(entities.values()) and still_held:'
+new = '    if False:'
+tests = [
+    'sim/tests/test_resume.py::test_a_resume_with_no_entities_refuses',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0014'
+describes = "a resumed world's ids continue past what is already there"
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/resume.py'
+old = '    world.counters.update(highest)'
+new = '    pass'
+tests = [
+    'sim/tests/test_resume.py::test_a_second_leg_continues_rather_than_colliding',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0015'
+describes = 'a row whose state is not a lifecycle state is not loaded'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/resume.py'
+old = '            if str(state) not in states:'
+new = '            if False:'
+tests = [
+    'sim/tests/test_resume.py::test_a_row_whose_state_is_not_a_lifecycle_state_is_left_alone',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0035'
+describes = 'a resumed entity keeps the dwell it had'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/resume.py'
+old = '            entered = row[2] if entered_column is not None else None'
+new = '            entered = None'
+tests = [
+    'sim/tests/test_resume.py::test_a_resumed_entity_keeps_the_dwell_it_had',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0040'
+describes = 'a resume with the wrong pack is refused'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/resume.py'
+old = '    if saved.pack and saved.pack != world.pack.name:'
+new = '    if False:'
+tests = [
+    'sim/tests/test_resume.py::test_resuming_with_a_different_pack_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0041'
+describes = "a database changed behind the world's back is refused"
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/resume.py'
+old = '    if saved.shape and saved.shape != fingerprint(world):'
+new = '    if False:'
+tests = [
+    'sim/tests/test_resume.py::test_a_database_that_changed_while_the_world_was_down_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0774'
+describes = 'SIM: a resume keeps the record of renames'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/resume.py'
+old = '''
+    world.lineage = Lineage.from_json(saved.lineage)
+'''
+new = ''
+tests = [
+    'sim/tests/test_resume.py::test_a_renamed_column_is_still_followed_after_a_resume',
+]
+expect = "fails"

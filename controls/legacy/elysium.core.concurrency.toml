@@ -1,0 +1,16 @@
+[[control]]
+id = 'LEG-0413'
+describes = 'AL-11: a question queued for the model slot gives up when its asker leaves'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/concurrency.py'
+old = '''
+                if abandon.is_set():
+                    raise WaitAbandoned()'''
+new = '''
+                if False:
+                    raise WaitAbandoned()'''
+tests = [
+    'tests/unit/test_cancel_stops_the_model_call.py::TestWaitingForASlot::test_a_waiter_gives_up_when_cancelled',
+]
+expect = "fails"

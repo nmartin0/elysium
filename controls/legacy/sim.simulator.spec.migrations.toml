@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0803'
+describes = 'SIM: a type change keeps NOT NULL unless it says otherwise'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/spec/migrations.py'
+old = '    if "nullable" not in definition and existing is not None:'
+new = '    if False:'
+tests = [
+    'sim/tests/test_migrations.py::test_a_type_change_keeps_not_null_unless_it_says_otherwise',
+]
+expect = "fails"

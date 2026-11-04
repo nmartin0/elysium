@@ -1,0 +1,53 @@
+[[control]]
+id = 'LEG-0016'
+describes = 'a dispute voids one bill rather than a whole history'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/packs/field_service.yaml'
+old = '''
+        where: {work_order_id: {generator: reference, from: subject.work_order_id}}
+        columns:
+          is_void:   {generator: constant, value: true}'''
+new = '''
+        where: {customer_id: {generator: reference, from: subject.customer_id}}
+        columns:
+          is_void:   {generator: constant, value: true}'''
+tests = [
+    'sim/tests/test_field_service.py::test_a_dispute_voids_one_bill_and_not_a_history',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0021'
+describes = 'a duplicated household agrees with itself'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/packs/field_service.yaml'
+old = '      phone:        {generator: reference, from: picked.customers.phone}'
+new = '      phone:        {generator: template, pattern: "0117 {customer_id}"}'
+tests = [
+    'sim/tests/test_field_service.py::test_a_duplicate_agrees_with_itself',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0022'
+describes = 'a dispute claws back the commission it paid'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/packs/field_service.yaml'
+old = '''
+      - update: dispatch.pay_lines
+        where: {work_order_id: {generator: reference, from: subject.work_order_id}}
+        columns:
+          amount: {generator: constant, value: "0.0000"}'''
+new = '''
+      - update: dispatch.customers
+        where: {customer_id: {generator: reference, from: subject.customer_id}}
+        columns:
+          updated_at: {generator: now}'''
+tests = [
+    'sim/tests/test_field_service.py::test_a_dispute_claws_back_the_engineers_commission',
+    'sim/tests/test_field_service.py::test_the_payroll_files_and_dispatch_disagree_about_what_was_earned',
+]
+expect = "fails"

@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0775'
+describes = "SIM: a PostgreSQL outage ends the reader's open sessions"
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/outages.py'
+old = 'SELECT count(pg_terminate_backend(pid))'
+new = 'SELECT count(pid)'
+tests = [
+    'sim/tests/test_control.py::test_a_postgresql_outage_ends_open_sessions_and_refuses_new_ones',
+]
+expect = "fails"

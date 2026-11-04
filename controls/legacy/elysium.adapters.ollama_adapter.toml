@@ -1,0 +1,77 @@
+[[control]]
+id = 'LEG-0099'
+describes = 'AR-5: Ollama receives the step schema'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/ollama_adapter.py'
+old = '            payload["format"] = json_mode if isinstance(json_mode, dict) else "json"'
+new = '            payload["format"] = "json"'
+tests = [
+    'tests/unit/test_step_schema.py::TestItReachesTheServer::test_ollama_sends_the_schema_as_format',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0111'
+describes = 'a JSON reply is capped'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/ollama_adapter.py'
+old = '        if json_mode and "num_predict" not in options and self.json_num_predict:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_ollama_adapter.py::TestAJsonReplyIsCapped::test_a_json_call_is_capped',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0698'
+describes = "TIMING: Ollama's reading time is its prompt evaluation"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/ollama_adapter.py'
+old = '                      reading_seconds=_seconds(body.get("prompt_eval_duration")),'
+new = '                      reading_seconds=None,'
+tests = [
+    'tests/unit/test_where_a_questions_time_goes.py::TestOllama::test_reading_writing_loading_and_reuse_from_its_nanoseconds',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0699'
+describes = "TIMING: Ollama's reuse is its cached prompt count"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/adapters/ollama_adapter.py'
+old = '                      cached_input_tokens=body.get("prompt_eval_cached_count"),'
+new = '                      cached_input_tokens=None,'
+tests = [
+    'tests/unit/test_where_a_questions_time_goes.py::TestOllama::test_reading_writing_loading_and_reuse_from_its_nanoseconds',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0715'
+describes = 'ANSWER: Ollama caps an answer where a limit is set'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/ollama_adapter.py'
+old = '        if not json_mode and "num_predict" not in options and self.prose_num_predict:'
+new = '        if False:'
+tests = [
+    'tests/unit/test_shorter_answers.py::TestOllama::test_an_answer_is_capped_where_a_limit_is_set',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0716'
+describes = 'ANSWER: Ollama reports stopping at the limit'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/adapters/ollama_adapter.py'
+old = '                      stopped_at_limit=(body.get("done_reason") == "length"'
+new = '                      stopped_at_limit=(False'
+tests = [
+    'tests/unit/test_shorter_answers.py::TestOllama::test_stopping_at_the_limit_is_reported',
+]
+expect = "fails"

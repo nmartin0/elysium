@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0248'
+describes = 'B3: no PostgreSQL fails the suite, never skips it'
+invariant = 'none'
+kind = 'semantic'
+path = 'tests/postgres_server.py'
+old = '        pytest.fail(NONE_AVAILABLE, pytrace=False)'
+new = '        pytest.skip(NONE_AVAILABLE)'
+tests = [
+    'tests/unit/test_postgres_is_never_silently_skipped.py::test_with_no_postgresql_at_all_it_fails_and_says_what_to_install',
+]
+expect = "fails"

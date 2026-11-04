@@ -1,0 +1,565 @@
+[[control]]
+id = 'LEG-0229'
+describes = 'R67b: a pending approved write is named'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+            if field_name in pending:
+                found[field_name] = "pending"'''
+new = '''
+            if False:
+                found[field_name] = "pending"'''
+tests = [
+    'tests/unit/test_an_overlaid_value_says_so.py::test_an_approved_write_still_being_applied_is_pending',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0297'
+describes = 'R37: a read computes the value from its inputs'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+        if derivation is not None:
+            # COMPUTED FROM ITS INPUTS'''
+new = '''
+        if False:
+            # COMPUTED FROM ITS INPUTS'''
+tests = [
+    'tests/unit/test_derived_fields.py::TestThroughARealDeployment::test_a_change_waiting_to_sync_is_in_the_value_beside_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0383'
+describes = 'NEW-1: a forward link to an object the caller may not see answers None'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+        if is_link_field(field_info) and value is not None:
+            # A FORWARD LINK'''
+new = '''
+        if False:
+            # A FORWARD LINK'''
+tests = [
+    'tests/unit/test_link_fields_respect_mac.py::TestAForwardLinkHidesItsTargetToo::test_a_foreign_key_to_a_hidden_object_is_withheld',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0554'
+describes = 'SEARCH: a saved change is found before the next sync'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '            entry for entry in [*self.write_log.get_all_pending_writes(), *applied]'
+new = '            entry for entry in self.write_log.get_all_pending_writes()'
+tests = [
+    'tests/integration/test_search_sees_saved_changes.py::test_found_by_its_new_value_and_not_its_old',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0594'
+describes = 'MEANING: ranking needs reading every field the text is made from'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '    return all((visible_fields.get(name) or {}).get("readable") is True for name in search.inputs)'
+new = '    return True'
+tests = [
+    'tests/integration/test_search_by_meaning.py::test_without_reading_the_text_there_is_no_search_by_meaning',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0595'
+describes = 'MEANING: knowing a field exists is not reading it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '    return all((visible_fields.get(name) or {}).get("readable") is True for name in search.inputs)'
+new = '    return all(name in visible_fields for name in search.inputs)'
+tests = [
+    'tests/integration/test_search_by_meaning.py::test_knowing_a_field_exists_is_not_reading_it',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0596'
+describes = 'MEANING: a ranking keeps only rows this person may read'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = 'if check_access(self, user_record, self.roles, object_type, candidate, action, context):'
+new = 'if True:'
+tests = [
+    'tests/integration/test_search_by_meaning.py::test_a_search_finds_by_meaning_what_its_words_did_not',
+    'tests/integration/test_search_by_meaning.py::test_similar_records_rank_by_the_objects_own_vector_without_calling_the_model',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0597'
+describes = 'MEANING: a deleted record is never ranked'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '        candidates = self._without_deleted(object_type, list(object_ids))'
+new = '        candidates = list(object_ids)'
+tests = [
+    'tests/integration/test_search_by_meaning.py::test_a_deleted_record_is_never_ranked',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0633'
+describes = 'PREDICT: the schema marks a prediction as predicted'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '                                 else prediction.describe()'
+new = '                                 else None'
+tests = [
+    'tests/unit/test_predictions.py::test_the_schema_marks_a_prediction_as_predicted',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0657'
+describes = 'PERIOD: only a date is grouped by period'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '            if group_by is None or declared not in TEMPORAL:'
+new = '            if group_by is None:'
+tests = [
+    'tests/unit/test_totals_by_period.py::TestThroughTheMediator::test_a_period_needs_a_date_and_a_known_period',
+    'tests/integration/test_totals_by_period_api.py::test_a_period_on_text_is_a_400_that_says_why',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0736'
+describes = 'UNRESTRICTED: its label is the lowest, never None'
+invariant = 'I3'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+        if is_unrestricted(type_schema):
+            return UNRESTRICTED'''
+new = '''
+        if False:
+            return UNRESTRICTED'''
+tests = [
+    'tests/unit/test_unrestricted_types.py::TestReading::test_its_label_is_the_lowest_never_none',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0806'
+describes = "OVERLAY: Elysium's writes are laid over each type from that type's own data time"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '        return self.mirror_synced_at_by_type.get(object_type, self.mirror_synced_at)'
+new = '        return self.mirror_synced_at'
+tests = [
+    'tests/unit/test_the_overlay_runs_per_type.py::TestTheOverlayRunsFromEachTypesData::test_a_type_read_after_the_write_serves_its_own_data',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0843'
+describes = 'SEVERAL MEASURES: the set is read once, not once per measure'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = 'self._measured(rows, group_by, measure, bucketing)'
+new = 'self._measured(self._read_fields_for_ids(user_record, object_type, visible_ids, fields), group_by, measure, bucketing)'
+tests = [
+    'tests/unit/test_several_measures.py::TestOneRequest::test_the_set_is_read_once_however_many_are_asked',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0844'
+describes = 'SEVERAL MEASURES: a measure with nothing in a group is 0 or None by kind'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = 'group, 0 if measure["aggregate"] in ZERO_WHEN_EMPTY else None)'
+new = 'group, 0)'
+tests = [
+    'tests/unit/test_several_measures.py::TestAGroupWithNoValueForOneMeasure',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0845'
+describes = 'SEVERAL MEASURES: a group is present when any measure has a value in it'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = 'groups = list(dict.fromkeys(group for result in per_measure.values() for group in result))'
+new = 'groups = list(list(per_measure.values())[-1])'
+tests = [
+    'tests/unit/test_several_measures.py::TestAGroupWithNoValueForOneMeasure',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0846'
+describes = 'SEVERAL MEASURES: time buckets come back in time order'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '            groups.sort()'
+new = '            pass'
+tests = [
+    'tests/unit/test_several_measures.py::TestOverTime::test_the_quarter_hours_are_every_one_between_for_every_measure',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0847'
+describes = 'SEVERAL MEASURES: two measures may not share a name'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = 'if len(set(names)) != len(names):'
+new = 'if False:'
+tests = [
+    'tests/unit/test_several_measures.py::TestWhatIsRefused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0848'
+describes = 'SEVERAL MEASURES: a name must be a plain identifier'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '_MEASURE_NAME = re.compile(r"[a-z_][a-z0-9_]*")'
+new = '_MEASURE_NAME = re.compile(r".*")'
+tests = [
+    'tests/unit/test_several_measures.py::TestWhatIsRefused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0849'
+describes = 'SEVERAL MEASURES: no more than the ceiling in one request'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = 'if len(measures) > MAX_MEASURES:'
+new = 'if False:'
+tests = [
+    'tests/unit/test_several_measures.py::TestWhatIsRefused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0850'
+describes = "SEVERAL MEASURES: a measure's field may not be a link"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '*(("field_name", m.get("field")) for m in measures)'
+new = ''
+tests = [
+    'tests/unit/test_aggregate_link_guard.py::test_aggregating_over_a_link_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0890'
+describes = 'DISCOVERABLE: a type its owner lists is known to everyone, by name'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+            if is_discoverable(definition)
+            or authorize('''
+new = '''
+            if False
+            or authorize('''
+tests = [
+    'tests/unit/test_discoverable_types.py::test_a_listed_type_is_a_name_and_nothing_else',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0891'
+describes = 'DISCOVERABLE: a link to a type the person is not told about is not named'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '            if field_info.get("type") != "link" or field_info.get("target") in known:'
+new = '            if True:'
+tests = [
+    'tests/unit/test_discoverable_types.py::TestALinkNamesItsTarget::test_a_forward_link_to_an_unknown_type_becomes_plain_data',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0892'
+describes = 'DISCOVERABLE: a reverse link to an unknown type goes, not just its name'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+            if is_reverse_link(field_info):
+                return {}'''
+new = '''
+            if False:
+                return {}'''
+tests = [
+    'tests/unit/test_discoverable_types.py::TestALinkNamesItsTarget::test_a_reverse_link_to_an_unknown_type_goes_altogether',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0973'
+describes = "a link's inherited status reaches a reader"
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '"status_inherited_from": redacted.get("status_inherited_from"),'
+new = '"status_inherited_from": None,'
+tests = [
+    'tests/integration/test_deprecate_from_the_ui.py::TestWhatAReaderSees::test_a_type_carries_its_reason_and_its_links_say_which_type_they_took_it_from',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0975'
+describes = "a link's reset status reads from the redacted field, not the original"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '"status": redacted.get("status") or "active",'
+new = '"status": field_info.get("status") or "active",'
+tests = [
+    'tests/integration/test_deprecate_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_links_inherited_status_is_hidden_when_the_other_type_is_not_discoverable',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0976'
+describes = "a link's reset status_inherited_from reads from the redacted field, not the original"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '"status_inherited_from": redacted.get("status_inherited_from"),'
+new = '"status_inherited_from": field_info.get("status_inherited_from"),'
+tests = [
+    'tests/integration/test_deprecate_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_links_inherited_status_is_hidden_when_the_other_type_is_not_discoverable',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0977'
+describes = "a type's replacement is hidden when it is not itself discoverable"
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '"deprecation": _visible_replacement(shown_deprecation(type_def.get("deprecation")), known),'
+new = '"deprecation": shown_deprecation(type_def.get("deprecation")),'
+tests = [
+    'tests/integration/test_deprecate_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_types_replacement_is_hidden_when_it_is_not_discoverable',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0978'
+describes = "a field's or link's replacement is hidden when it is not itself discoverable"
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+"deprecation": _visible_replacement(
+                        shown_deprecation(redacted.get("deprecation")),
+                        discoverable_link_types if field_info.get("type") == "link" else discoverable_fields),'''
+new = '"deprecation": shown_deprecation(redacted.get("deprecation")),'
+tests = [
+    'tests/integration/test_deprecate_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_fields_replacement_is_hidden_when_it_is_not_discoverable',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1031'
+describes = 'a type listed to everyone is known without a grant, and its fields are not'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '                is_discoverable(definition) or authorize(user_record, self.roles, f"discover:{object_type}")):'
+new = '                authorize(user_record, self.roles, f"discover:{object_type}")):'
+tests = [
+    'tests/unit/test_mediator_knows.py::test_it_answers_as_the_visible_schema_would',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1032'
+describes = 'a field is known only if the person may discover that field'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+            and authorize(user_record, self.roles, f"discover:{object_type}.{field_name}"))
+
+    def visible_schema'''
+new = '''
+            )
+
+    def visible_schema'''
+tests = [
+    'tests/unit/test_mediator_knows.py::test_it_answers_as_the_visible_schema_would',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1033'
+describes = 'a field is known only through its type being known'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+        if definition is None or not (
+                is_discoverable(definition)'''
+new = '''
+        if definition is None or False and not (
+                is_discoverable(definition)'''
+tests = [
+    'tests/unit/test_mediator_knows.py::test_it_answers_as_the_visible_schema_would',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1100'
+describes = 'v2 sets: a source id handed to search-around is checked again, not trusted'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+        sources = self._still_readable(user_record, object_type, source_ids, context)
+'''
+new = '''
+        sources = list(source_ids)
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestARowTheCallerCannotSeeNeverAppears::test_only_the_sources_that_pass_the_check_are_followed',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1101'
+describes = 'v2 sets: values are withheld for ids the caller cannot see'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+        allowed = self._still_readable(user_record, object_type, object_ids, context)
+'''
+new = '''
+        allowed = list(object_ids)
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestARowTheCallerCannotSeeNeverAppears::test_field_values_are_withheld_for_ids_the_caller_cannot_see',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1102'
+describes = 'v2 sets: an aggregate over named members checks them again'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+            visible_ids = set(self._still_readable(user_record, object_type, members))
+'''
+new = '''
+            visible_ids = set(members)
+'''
+tests = [
+    'tests/integration/test_object_sets_evaluation.py::TestAggregating::test_members_are_checked_again_by_the_mediator',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1144'
+describes = 'v2 sets: the values filtering and sorting read hide a link whose target the caller cannot see'
+invariant = 'I3'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+        self._withhold_hidden_link_targets(user_record, object_type, rows, context)
+        return rows
+'''
+new = '''
+        return rows
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_a_hidden_link_matches_no_comparison',
+    'tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_a_hidden_link_is_null_to_isnull_as_it_is_to_get_field',
+    'tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_ordering_puts_hidden_links_with_the_nulls[True]',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1145'
+describes = 'v2 sets: hiding link values is batched and logged as one bulk read of the target'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+            self.audit_log.log_bulk_read(
+                user_record.user_id, target_type, action,
+'''
+new = '''
+            self.audit_log.log_bulk_read(
+                user_record.user_id, target_type, action + '.x',
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_masking_is_batched_and_logged_as_one_bulk_read',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1151'
+describes = 'v2 sets: a forward search-around reads its sources as one logged bulk read'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+user_record.user_id, object_type, f"read:{object_type}.{link_field}",
+                considered=len(source_ids)'''
+new = '''
+user_record.user_id, object_type, f"read:{object_type}",
+                considered=len(source_ids)'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestAForwardSearchAroundIsOneBulkRead::test_sources_are_logged_once_not_once_each',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1163'
+describes = "v2 sets: a cut of the caller's own answer is reported when the row check was in the query"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/mediator.py'
+old = '''
+                (pushed_security is not None and user_record.security_value is not None)
+'''
+new = '''
+                False
+'''
+tests = [
+    'tests/integration/test_object_sets_hidden_links.py::TestNeverASilentCut::test_a_cut_of_the_callers_own_answer_is_reported',
+]
+expect = "fails"

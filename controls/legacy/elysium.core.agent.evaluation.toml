@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0432'
+describes = 'AGENT-FEATURES: a memory is graded on the object it was filed against'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/evaluation.py'
+old = '            object_type == expected.object_type and object_id == expected.object_id'
+new = '            object_type == expected.object_type'
+tests = [
+    'tests/unit/test_agent_features.py::TestRememberFromQuery::test_graded_on_the_object',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0721'
+describes = 'ANSWER: a citation tag is not taken for a stated value'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/agent/evaluation.py'
+old = '    said = _CITATION.sub("", answer).lower()'
+new = '    said = answer.lower()'
+tests = [
+    'tests/unit/test_shorter_answers.py::TestTheAnswerIsGraded::test_a_citation_tag_is_not_a_value',
+]
+expect = "fails"

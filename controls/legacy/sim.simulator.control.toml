@@ -1,0 +1,45 @@
+[[control]]
+id = 'LEG-0773'
+describes = 'SIM: live drift goes through the world, so the business follows it'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/control.py'
+old = '''
+    world.apply_change(silo_name, change)
+'''
+new = '''
+    world.schemas[silo_name] = change.apply(world.silo(silo_name), world.database(silo_name), world.schema(silo_name), world.clock.now())
+'''
+tests = [
+    'sim/tests/test_control.py::test_a_live_rename_is_followed_by_the_business_and_its_exports',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0777'
+describes = 'SIM: control.json is readable by its owner only'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/control.py'
+old = 'os.O_TRUNC, 0o600)'
+new = 'os.O_TRUNC, 0o644)'
+tests = [
+    'sim/tests/test_control.py::test_the_control_file_is_the_owners_alone_and_not_a_connection',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0780'
+describes = 'SIM: a control command the caller gave up on is not carried out'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/control.py'
+old = '''
+            if not future.set_running_or_notify_cancel():
+                continue        # withdrawn by a caller that stopped waiting
+'''
+new = ''
+tests = [
+    'sim/tests/test_control_queue.py::test_a_command_the_caller_gave_up_on_is_not_carried_out',
+]
+expect = "fails"

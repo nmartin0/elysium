@@ -1,0 +1,44 @@
+[[control]]
+id = 'LEG-0704'
+describes = 'TIMING: the bench writes and times the answer too'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/llm_bench.py'
+old = '                            if answer else None)'
+new = '                            if False else None)'
+tests = [
+    'tests/unit/test_llm_bench.py::test_a_trial_is_a_whole_question_answer_included',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0705'
+describes = 'TIMING: another model is set on the adapter beneath every wrapper'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/llm_bench.py'
+old = '''
+    while hasattr(adapter, "_wrapped"):
+        adapter = adapter._wrapped
+    if not hasattr(adapter, "model"):'''
+new = '''
+    if hasattr(adapter, "_wrapped"):
+        adapter = adapter._wrapped
+    if not hasattr(adapter, "model"):'''
+tests = [
+    'tests/unit/test_llm_bench.py::test_another_model_through_every_wrapper',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0723'
+describes = "ANSWER: the bench's answer is written as the switch says"
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/llm_bench.py'
+old = '        brief=generation.loop.features.brief_answers)'
+new = '        brief=False)'
+tests = [
+    'tests/unit/test_feature_bench.py::test_the_whole_session_runs_and_decides',
+]
+expect = "fails"

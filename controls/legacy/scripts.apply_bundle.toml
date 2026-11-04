@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0964'
+describes = 'a bundle is not applied when a lane directory is missing'
+invariant = 'none'
+kind = 'semantic'
+path = 'scripts/apply_bundle.sh'
+old = '  [[ -d "$d" ]] || fail "lane'
+new = '  true || fail "lane'
+tests = [
+    'tests/unit/test_patch_scripts.py::test_apply_bundle_applies_nothing_when_a_lane_directory_is_missing',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0965'
+describes = 'a bundle is not applied when a lane is on the wrong branch'
+invariant = 'none'
+kind = 'semantic'
+path = 'scripts/apply_bundle.sh'
+old = '  [[ "$(git -C "$d" rev-parse --abbrev-ref HEAD)" == "$lane" ]] ||'
+new = '  true ||'
+tests = [
+    'tests/unit/test_patch_scripts.py::test_apply_bundle_refuses_a_lane_not_on_its_branch_before_applying_anything',
+]
+expect = "fails"

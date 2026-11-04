@@ -1,0 +1,50 @@
+[[control]]
+id = 'LEG-1125'
+describes = 'v2 errors: the error instance id is the request id'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/context.py'
+old = '''
+    request.state.v2_request_id = context.request_id
+'''
+new = '''
+    request.state.v2_request_id = "not-the-request-id"
+'''
+tests = [
+    'tests/integration/test_api_v2.py::TestErrorsAndTheRequestId::test_the_error_instance_id_is_the_request_id_the_call_was_given',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1126'
+describes = 'v2 routes: a call needs a signed-in session'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/context.py'
+old = '''
+         user: UserRecord = Depends(get_current_user),
+'''
+new = '''
+         user: UserRecord = UserRecord("anyone", "us-west", "customer_service"),
+'''
+tests = [
+    'tests/integration/test_api_v2.py::TestBehindTheSameDoor::test_every_route_needs_a_session_and_says_so_as_a_problem',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1127'
+describes = 'v2 routes: a call is pinned to one generation, never read from app state'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/api/v2/context.py'
+old = '''
+    return Call(request=request, user=user, generation=generation, context=context)
+'''
+new = '''
+    return Call(request=request, user=user, generation=request.app.state.generation, context=context)
+'''
+tests = [
+    'tests/unit/test_generation_pin.py::test_v2_routes_read_the_pin_rather_than_app_state',
+]
+expect = "fails"

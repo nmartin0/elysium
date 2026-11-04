@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0542'
+describes = 'DECLARED: objects_from names the condition whose objects the action takes'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/declared_triggers.py'
+old = '                action_view_id = names[objects_from]'
+new = '                action_view_id = None'
+tests = [
+    'tests/unit/test_declared_combined_triggers.py::TestItParses::test_conditions_combine_hold_and_where_the_action_takes_its_objects',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0543'
+describes = 'DECLARED: the action is checked against the condition it takes objects from'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/declared_triggers.py'
+old = '                          if view.view_id == (action_view_id or own_view.view_id))'
+new = '                          if view.view_id == own_view.view_id)'
+tests = [
+    'tests/unit/test_declared_combined_triggers.py::TestRefusedAtLoad::test_an_action_on_a_condition_of_the_wrong_type',
+]
+expect = "fails"

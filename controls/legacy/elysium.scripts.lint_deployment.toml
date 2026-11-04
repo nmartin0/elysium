@@ -1,0 +1,18 @@
+[[control]]
+id = 'LEG-1143'
+describes = 'the deployment linter reports an unknown key'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/scripts/lint_deployment.py'
+old = '''
+        if unknown:
+            return _report_invalid(config_dir, unknown)
+'''
+new = '''
+        if False:
+            return _report_invalid(config_dir, unknown)
+'''
+tests = [
+    'tests/unit/test_config_schema.py::test_the_linter_reports_the_same_keys_with_their_lines',
+]
+expect = "fails"

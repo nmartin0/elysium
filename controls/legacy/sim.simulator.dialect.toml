@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0002'
+describes = 'a name that is really SQL is refused where it enters a statement'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/dialect.py'
+old = '{Identifier(identifier)}'
+new = '{identifier}'
+tests = [
+    'sim/tests/test_drift.py::test_a_rename_refuses_a_name_that_is_really_sql',
+]
+expect = "fails"

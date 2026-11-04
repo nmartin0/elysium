@@ -1,0 +1,25 @@
+[[control]]
+id = 'LEG-0001'
+describes = 'a schema change that did not take effect is caught'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/drift.py'
+old = '        verify_schema(silo, database, schema)'
+new = '        pass'
+tests = [
+    'sim/tests/test_drift.py::test_a_change_that_did_not_take_effect_is_caught',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0010'
+describes = 'the migration history records when a change really happened'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/drift.py'
+old = '            cursor.execute(insert, [at, datetime.now(UTC), operation, detail,'
+new = '            cursor.execute(insert, [at, at, operation, detail,'
+tests = [
+    'sim/tests/test_drift.py::test_every_change_records_both_clocks',
+]
+expect = "fails"

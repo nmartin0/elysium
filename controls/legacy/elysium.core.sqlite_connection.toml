@@ -1,0 +1,14 @@
+[[control]]
+id = 'LEG-0364'
+describes = 'CONCERN-1: SQLite reads a misspelled double-quoted column as an error, not its name'
+invariant = 'none'
+kind = 'semantic'
+path = 'src/elysium/core/sqlite_connection.py'
+old = '''
+    _refuse_double_quoted_strings(conn)
+'''
+new = ''
+tests = [
+    'tests/unit/test_source_column_names_are_never_sql.py::TestTheMisspellingHazard::test_the_adapter_now_refuses_it_itself',
+]
+expect = "fails"

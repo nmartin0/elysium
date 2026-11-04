@@ -1,0 +1,42 @@
+[[control]]
+id = 'LEG-1095'
+describes = 'deprecation alert: only holders of manage:deployment are told'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/deprecation_alerts.py'
+old = '            if authorize(directory.get_user_record(account["username"]), config.roles, MANAGE_PERMISSION):'
+new = '            if True:'
+tests = [
+    'tests/unit/test_deprecation_alerts.py::TestWhoIsToldAndWhere::test_only_active_holders_of_manage_deployment',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1096'
+describes = 'deprecation alert: a disabled account is not told'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/deprecation_alerts.py'
+old = '''
+        if account["disabled"]:
+            continue'''
+new = '''
+        if False:
+            continue'''
+tests = [
+    'tests/unit/test_deprecation_alerts.py::TestWhoIsToldAndWhere::test_only_active_holders_of_manage_deployment',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-1097'
+describes = 'deprecation alert: arming at start does not move a check already set'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/api/deprecation_alerts.py'
+old = '        if timers.get(KIND, KEY) is None:'
+new = '        if True:'
+tests = [
+    'tests/unit/test_deprecation_alerts.py::TestArming::test_set_once_daily_and_not_moved_by_a_restart',
+]
+expect = "fails"

@@ -1,0 +1,26 @@
+[[control]]
+id = 'LEG-0808'
+describes = 'ENRICH: only an APPROVED recipe reaches gold'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/enrichment_recipes.py'
+old = "\"field_name = ? AND declaration_hash = ? AND status = 'approved' \""
+new = "\"field_name = ? AND declaration_hash = ? AND status != 'rejected' \""
+tests = [
+    'tests/integration/test_enriched_fields_reach_gold.py::test_empty_until_approved_then_filled_and_searchable',
+    'tests/unit/test_enriched_fields.py::TestTheStore::test_only_an_approved_recipe_for_the_current_question_reaches_gold',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0809'
+describes = 'ENRICH: an approval lapses when the question changes'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/enrichment_recipes.py'
+old = "\"field_name = ? AND declaration_hash = ? AND status = 'approved' \""
+new = "\"field_name = ? AND (declaration_hash = ? OR 1) AND status = 'approved' \""
+tests = [
+    'tests/unit/test_enriched_fields.py::TestTheStore::test_only_an_approved_recipe_for_the_current_question_reaches_gold',
+]
+expect = "fails"

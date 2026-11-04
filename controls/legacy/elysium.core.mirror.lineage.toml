@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0382'
+describes = 'SEC-02: a source column named _security is refused, not overwritten'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/lineage.py'
+old = '    clashes = sorted(set(columns) & set(CARRIED_COLUMNS))'
+new = '    clashes = sorted(set(columns) & set(LINEAGE_COLUMNS))'
+tests = [
+    'tests/unit/test_system_columns_are_not_silently_taken.py::TestTheSyncRefusesTheCollision::test_a_source_security_column_is_refused_too',
+]
+expect = "fails"

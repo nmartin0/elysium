@@ -1,0 +1,12 @@
+[[control]]
+id = 'LEG-0245'
+describes = 'R38: a null value names no source'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/mirror/fusion.py'
+old = '                if fused_row[field_name] is not None:'
+new = '                if True:'
+tests = [
+    'tests/unit/test_which_source_supplied_each_value.py::TestTheJoinPath::test_a_null_or_an_absent_storage_supplied_nothing',
+]
+expect = "fails"

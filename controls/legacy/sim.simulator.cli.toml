@@ -1,0 +1,42 @@
+[[control]]
+id = 'LEG-0776'
+describes = 'SIM: a paused world does not tick'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/cli.py'
+old = '''
+            time.sleep(CONTROL_POLL_SECONDS)
+            continue'''
+new = '            time.sleep(CONTROL_POLL_SECONDS)'
+tests = [
+    'sim/tests/test_control.py::test_a_paused_world_does_not_tick',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0828'
+describes = 'SIM: SIGTERM ends a run through its teardown'
+invariant = 'none'
+kind = 'semantic'
+path = 'sim/simulator/cli.py'
+old = '        self._previous_term = signal.signal(signal.SIGTERM, self._raise)'
+new = '        self._previous_term = signal.getsignal(signal.SIGTERM)'
+tests = [
+    'sim/tests/test_stopping.py::test_sigterm_ends_the_run_through_its_teardown_as_ctrl_c_does',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0829'
+describes = 'SIM: `stop` ends the run'
+invariant = 'none'
+kind = 'mechanical'
+path = 'sim/simulator/cli.py'
+old = '''
+    if controller.stop_requested:
+        raise _Interrupted'''
+new = '    pass'
+tests = [
+    'sim/tests/test_stopping.py::test_stop_ends_the_loop_after_its_reply_is_given',
+]
+expect = "fails"

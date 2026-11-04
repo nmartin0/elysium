@@ -1,0 +1,29 @@
+[[control]]
+id = 'LEG-0681'
+describes = 'UNUSUAL: a classified field is never checked'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/unusual_checks.py'
+old = '''
+    labels = field_classifications(field)
+    if labels:'''
+new = '''
+    labels = field_classifications(field)
+    if False:'''
+tests = [
+    'tests/unit/test_unusual.py::TestTheDeclaration::test_one_that_could_not_be_made_is_refused',
+]
+expect = "fails"
+
+[[control]]
+id = 'LEG-0682'
+describes = 'UNUSUAL: only a number may be unusual'
+invariant = 'none'
+kind = 'mechanical'
+path = 'src/elysium/core/ontology/unusual_checks.py'
+old = '            if (fields[name].get("data_type") or "string") not in NUMERIC:'
+new = '            if False:'
+tests = [
+    'tests/unit/test_unusual.py::TestTheDeclaration::test_one_that_could_not_be_made_is_refused',
+]
+expect = "fails"
